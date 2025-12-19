@@ -1,0 +1,48 @@
+name: Deploy to DEV
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      
+      - name: Check changed files
+        id: changes
+        run: |
+          echo "platform=$(git diff --name-only HEAD~1 HEAD | grep -q 'apps/platform' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "dashboard=$(git diff --name-only HEAD~1 HEAD | grep -q 'apps/dashboard' && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+      
+      - name: Deploy to DEV
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 134.199.235.140
+          username: root
+          key: ${{ secrets.DEV_SSH_KEY }}
+          script: |
+            export PATH=/root/.nvm/versions/node/v22.21.1/bin:$PATH
+            cd /opt/swarm-app
+            git pull origin main
+            
+            # Always install deps at root
+            pnpm install --frozen-lockfile
+            
+            # Restart platform
+            if [ "${{ steps.changes.outputs.platform }}" = "true" ]; then
+              echo "Restarting platform..."
+              pm2 restart swarm-platform-dev || pm2 start apps/platform/server.js --name swarm-platform-dev
+            fi
+            
+            # Rebuild and restart dashboard
+            if [ "${{ steps.changes.outputs.dashboard }}" = "true" ]; then
+              echo "Rebuilding dashboard..."
+              cd apps/dashboard && pnpm run build
+              pm2 restart swarm-dashboard-dev || echo "Dashboard is static, no restart needed"
+            fi
+            
+            echo "Deploy complete!"

@@ -34,3 +34,6 @@ coverage/
 *.bak
 temp/
 tmp/
+
+# Auto Claude data directory
+.auto-claude/

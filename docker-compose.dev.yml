@@ -1,0 +1,24 @@
+# Local Development Docker Compose
+# Run: docker-compose -f docker-compose.dev.yml up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: swarm-postgres
+    environment:
+      POSTGRES_DB: swarmdb
+      POSTGRES_USER: swarm
+      POSTGRES_PASSWORD: swarm_dev_2024
+    ports:
+      - "5432:5432"
+    volumes:
+      - swarm_pgdata:/var/lib/postgresql/data
+      - ./apps/platform/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swarm -d swarmdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  swarm_pgdata:

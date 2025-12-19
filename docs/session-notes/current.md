@@ -1,107 +1,60 @@
 # Current Session Notes
 
-## Session: December 19, 2024 - Monorepo Creation
+## Session: December 19, 2024 - Monorepo Migration
 
-### Status: MONOREPO CREATED ✅
-
----
-
-## Monorepo Setup Complete
-
-### New Repository
-- **GitHub**: https://github.com/corynaegle-ai/swarm-app
-- **Local**: `~/Projects/swarm`
-
-### Structure
-```
-swarm/
-├── apps/
-│   ├── platform/     # @swarm/platform - Backend API
-│   └── dashboard/    # @swarm/dashboard - Frontend UI
-├── docs/             # Specifications & documentation
-├── package.json      # pnpm workspace root
-├── pnpm-workspace.yaml
-└── README.md
-```
-
-### Commands
-```bash
-cd ~/Projects/swarm
-
-# Install all dependencies
-pnpm install
-
-# Development
-pnpm dev:platform    # Start backend
-pnpm dev:dashboard   # Start frontend
-```
+### Status: PLATFORM MIGRATED ✅ | DASHBOARD PENDING
 
 ---
 
-## Auto-Claude Configuration
+## Monorepo Deployment Progress
 
-### Ready to Add Project
-Add the monorepo to Auto-Claude:
-- Path: `~/Projects/swarm`
-- This single project covers platform, dashboard, and docs
+### Completed
+- GitHub Actions deploy workflow working
+- DEV droplet synced to `/opt/swarm-app`
+- Platform migrated to monorepo path
+- Platform health check passing
+- PM2 config saved
 
-### API Key Configured ✅
-`ANTHROPIC_API_KEY` set in `~/Projects/Auto-Claude/auto-claude/.env`
-
----
-
-## Migration Notes
-
-### Old Repos (can be archived)
-| Repo | Status | Action |
-|------|--------|--------|
-| swarm-platform | Merged | Archive after testing |
-| swarm-dashboard | Merged | Archive after testing |
-| swarm-specs | Merged | Archive after testing |
-
-### Kept Separate
-| Repo | Reason |
-|------|--------|
-| swarm | Firecracker VM infrastructure scripts |
+### Pending
+- Dashboard migration to monorepo path
+- Local dev testing with SSH tunnel
+- Auto-Claude testing
 
 ---
 
-## Deployment Updates Required
-
-After validating the monorepo works with Auto-Claude:
+## Key Paths
 
 ### DEV Droplet (134.199.235.140)
-```bash
-# Replace separate repos with monorepo
-cd /opt
-git clone https://github.com/corynaegle-ai/swarm-app.git swarm-app
-cd swarm-app && pnpm install
+| Component | Old Path | New Path | Status |
+|-----------|----------|----------|--------|
+| Platform | /opt/swarm-platform | /opt/swarm-app/apps/platform | ✅ Migrated |
+| Dashboard | /opt/swarm-dashboard | /opt/swarm-app/apps/dashboard | ❌ Pending |
 
-# Update PM2 configs to point to new paths
-# apps/platform → /opt/swarm-app/apps/platform
-# apps/dashboard → /opt/swarm-app/apps/dashboard
-```
-
-### PM2 Ecosystem Updates
-- `swarm-platform-dev` → `/opt/swarm-app/apps/platform/server.js`
-- `swarm-dashboard-dev` → `/opt/swarm-app/apps/dashboard` (static serve)
+### Local Mac
+- Monorepo: `~/Projects/swarm`
+- Auto-Claude: `~/Projects/Auto-Claude`
 
 ---
 
-## Quick Reference
+## Commands Reference
 
-### Droplet Access
 ```bash
-# DEV
+# DEV SSH
 ssh -i ~/.ssh/swarm_key root@134.199.235.140
 export PATH=/root/.nvm/versions/node/v22.21.1/bin:$PATH
 
-# PROD
-ssh -i ~/.ssh/swarm_key root@146.190.35.235
-export PATH=/root/.nvm/versions/node/v22.12.0/bin:$PATH
-```
+# Test platform
+curl http://134.199.235.140:8080/health
 
-### Auto-Claude
-```bash
+# Local dev (requires tunnel)
+~/Projects/swarm/scripts/tunnel-dev-db.sh  # Terminal 1
+cd ~/Projects/swarm/apps/platform && pnpm dev  # Terminal 2
+
+# Auto-Claude
 cd ~/Projects/Auto-Claude/auto-claude-ui && pnpm run start
 ```
+
+---
+
+## Continuation Prompt
+`~/Projects/swarm/docs/prompts/continue-monorepo-migration.md`

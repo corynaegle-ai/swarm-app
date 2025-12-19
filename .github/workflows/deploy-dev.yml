@@ -27,6 +27,10 @@ jobs:
           script: |
             export PATH=/root/.nvm/versions/node/v22.21.1/bin:$PATH
             cd /opt/swarm-app
+            
+            # Clean any local changes and pull
+            git checkout -- .
+            git clean -fd
             git pull origin main
             
             # Always install deps at root

@@ -1,0 +1,60 @@
+# Swarm Dashboard - Deployment Manifest
+
+service:
+  name: swarm-dashboard
+  description: "Swarm monitoring and management dashboard"
+  pm2_name: swarm-dashboard-dev
+  port: 3000
+  
+repository:
+  path: /opt/swarm-dashboard
+  github: corynaegle-ai/swarm-dashboard
+  branch: main
+  
+environment:
+  target: dev
+  droplet_ip: 134.199.235.140
+  
+build:
+  pre_checks:
+    - test -f package.json
+    - test -f next.config.js || test -f next.config.mjs
+  commands:
+    - npm ci
+    - npm run build
+  timeout: 300
+  working_dir: /opt/swarm-dashboard
+  
+deploy:
+  strategy: replace
+  commands:
+    - pm2 restart swarm-dashboard-dev --update-env
+  timeout: 60
+  
+health_check:
+  endpoint: http://localhost:3000
+  method: GET
+  expected_status: 200
+  timeout: 30
+  retries: 3
+  retry_delay: 5
+  
+rollback:
+  enabled: true
+  strategy: git_revert
+  commands:
+    - git stash
+    - git checkout HEAD^
+    - npm ci
+    - npm run build
+    - pm2 restart swarm-dashboard-dev --update-env
+    
+dependencies:
+  services: []  # No service dependencies
+  env_vars:
+    - NEXT_PUBLIC_API_URL
+    
+notifications:
+  on_success: true
+  on_failure: true
+  create_ticket: true

@@ -1,0 +1,395 @@
+/**
+ * CreateProject Repository Selector Styles
+ * For the Build Feature repository selection UI
+ */
+
+/* Field hint under label */
+.field-hint {
+  color: #666;
+  font-size: 0.85rem;
+  font-weight: normal;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+
+/* Repository loading state */
+.repo-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #1a1a2e;
+  border-radius: 6px;
+  color: #888;
+}
+
+.repo-loading .spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Repository error state */
+.repo-error {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(255, 68, 68, 0.1);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  border-radius: 6px;
+  color: #ff6b6b;
+}
+
+.repo-error .retry-btn {
+  margin-left: auto;
+  padding: 0.35rem 0.75rem;
+  background: transparent;
+  border: 1px solid #ff6b6b;
+  border-radius: 4px;
+  color: #ff6b6b;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.repo-error .retry-btn:hover {
+  background: rgba(255, 68, 68, 0.2);
+}
+
+/* Main Repository Selector */
+.repo-selector {
+  position: relative;
+}
+
+.repo-dropdown-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.repo-dropdown-trigger:hover {
+  border-color: #555;
+  background: #111;
+}
+
+.repo-dropdown-trigger.open {
+  border-color: #ff8800;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.repo-dropdown-trigger .placeholder {
+  color: #666;
+}
+
+.repo-dropdown-trigger .selected-repo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.repo-dropdown-trigger .chevron {
+  transition: transform 0.2s;
+  color: #666;
+}
+
+.repo-dropdown-trigger .chevron.rotated {
+  transform: rotate(180deg);
+}
+
+/* Dropdown Panel */
+.repo-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #1a1a2e;
+  border: 1px solid #ff8800;
+  border-top: none;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  z-index: 100;
+  max-height: 350px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Search in dropdown */
+.repo-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid #333;
+  color: #666;
+}
+
+.repo-search input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 0.9rem;
+  outline: none;
+}
+
+.repo-search input::placeholder {
+  color: #555;
+}
+
+/* Repository list */
+.repo-list {
+  overflow-y: auto;
+  max-height: 280px;
+}
+
+.repo-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.repo-list::-webkit-scrollbar-track {
+  background: #111;
+}
+
+.repo-list::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+.no-repos {
+  padding: 1.5rem;
+  text-align: center;
+  color: #666;
+}
+
+.repo-option {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.repo-option:hover {
+  background: rgba(255, 136, 0, 0.1);
+}
+
+.repo-option.selected {
+  background: rgba(255, 136, 0, 0.15);
+}
+
+.repo-option-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.repo-option-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.repo-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repo-lang {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.4rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  color: #aaa;
+}
+
+.repo-desc {
+  font-size: 0.8rem;
+  color: #666;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repo-option .check-icon {
+  color: #ff8800;
+  margin-left: 0.5rem;
+  flex-shrink: 0;
+}
+
+
+/* Supporting Repositories Selector */
+.supporting-repos-container {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.supporting-repos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: #1a1a2e;
+  border-bottom: 1px solid #333;
+}
+
+.selected-count {
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.supporting-repos-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.supporting-repos-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.supporting-repos-list::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+.supporting-repos-list::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+.supporting-repo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid #222;
+}
+
+.supporting-repo-item:last-child {
+  border-bottom: none;
+}
+
+.supporting-repo-item:hover {
+  background: rgba(255, 136, 0, 0.05);
+}
+
+.supporting-repo-item.selected {
+  background: rgba(255, 136, 0, 0.1);
+}
+
+.supporting-repo-item input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.checkbox-custom {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border: 2px solid #444;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  margin-top: 2px;
+}
+
+.supporting-repo-item.selected .checkbox-custom {
+  background: #ff8800;
+  border-color: #ff8800;
+}
+
+.checkbox-custom svg {
+  color: #fff;
+}
+
+.supporting-repo-item .repo-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.supporting-repo-item .repo-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  color: #fff;
+}
+
+.supporting-repo-item .repo-name {
+  font-weight: 500;
+}
+
+.supporting-repo-item .repo-lang {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.35rem;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  color: #999;
+}
+
+.supporting-repo-item .repo-desc {
+  font-size: 0.8rem;
+  color: #666;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Selected repos summary (if main repo selected) */
+.selected-repos-summary {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(255, 136, 0, 0.1);
+  border: 1px solid rgba(255, 136, 0, 0.3);
+  border-radius: 6px;
+}
+
+.selected-repos-summary h4 {
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+  color: #ff8800;
+}
+
+.selected-repo-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  margin-right: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.selected-repo-tag.main {
+  background: rgba(255, 136, 0, 0.3);
+  color: #ff8800;
+}

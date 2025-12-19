@@ -1,0 +1,183 @@
+# Swarm Platform - Prometheus Alerting Rules
+# Location: /etc/prometheus/rules/swarm-alerts.yaml
+# 
+# Reference: /opt/swarm-specs/design-docs/observability/design.md
+# Created: 2025-12-15
+
+groups:
+  - name: swarm_api_alerts
+    interval: 30s
+    rules:
+      # Alert 1: High API Error Rate
+      - alert: SwarmHighErrorRate
+        expr: |
+          (
+            sum(rate(swarm_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(swarm_http_requests_total[5m]))
+          ) * 100 > 5
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          runbook: https://swarmstack.net/runbooks/high-error-rate
+        annotations:
+          summary: "High API error rate detected"
+          description: "API 5xx error rate is {{ $value | printf \"%.2f\" }}% (threshold: 5%)"
+          dashboard: "https://grafana.swarmstack.net/d/swarm-system-overview"
+          impact: "Users experiencing failures, agent workflows may be disrupted"
+          action: "Check logs for error patterns, verify database connectivity"
+
+      # Alert 2: Claude API Down
+      - alert: SwarmClaudeAPIDown
+        expr: |
+          sum(rate(swarm_claude_api_calls_total[5m])) == 0
+          and
+          sum(swarm_active_vms) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          runbook: https://swarmstack.net/runbooks/claude-api-down
+        annotations:
+          summary: "Claude API calls stopped"
+          description: "No Claude API calls for 5 minutes while {{ $value }} VMs are active"
+          dashboard: "https://grafana.swarmstack.net/d/swarm-agent-performance"
+          impact: "All agent work is blocked, no code generation possible"
+          action: "Check Claude API status, verify API key, check agent logs"
+
+  - name: swarm_vm_alerts
+    interval: 30s
+    rules:
+      # Alert 3: VM Boot Slow
+      - alert: SwarmVMBootSlow
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(swarm_vm_boot_duration_seconds_bucket[5m])) by (le)
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: infrastructure
+          runbook: https://swarmstack.net/runbooks/vm-boot-slow
+        annotations:
+          summary: "VM boot times degraded"
+          description: "P95 VM boot time is {{ $value | printf \"%.3f\" }}s (threshold: 100ms)"
+          dashboard: "https://grafana.swarmstack.net/d/swarm-vm-health"
+          impact: "Ticket processing delays, reduced throughput"
+          action: "Check disk I/O, verify snapshot integrity, check host resources"
+
+      # Alert 4: No Active VMs
+      - alert: SwarmNoActiveVMs
+        expr: swarm_active_vms == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: infrastructure
+          runbook: https://swarmstack.net/runbooks/no-active-vms
+        annotations:
+          summary: "No VMs running"
+          description: "No active VMs for 5 minutes - all agent work is stopped"
+          dashboard: "https://grafana.swarmstack.net/d/swarm-vm-health"
+          impact: "Complete system halt, no tickets being processed"
+          action: "Check Firecracker service, verify snapshots, check disk space"
+
+  - name: swarm_agent_alerts
+    interval: 30s
+    rules:
+      # Alert 5: Agent Success Rate Low
+      - alert: SwarmAgentSuccessLow
+        expr: |
+          (
+            sum(rate(swarm_agent_operations_total{status="success"}[15m]))
+            /
+            sum(rate(swarm_agent_operations_total[15m]))
+          ) * 100 < 90
+        for: 15m
+        labels:
+          severity: critical
+          team: engineering
+          runbook: https://swarmstack.net/runbooks/agent-failures
+        annotations:
+          summary: "Agent success rate critically low"
+          description: "Agent success rate is {{ $value | printf \"%.1f\" }}% (threshold: 90%)"
+          dashboard: "https://grafana.swarmstack.net/d/swarm-agent-performance"
+          impact: "Poor code quality, high rework rate"
+          action: "Check verifier results, review failed PRs, analyze error patterns"
+
+  - name: swarm_ticket_alerts
+    interval: 30s
+    rules:
+      # Alert 6: Ticket Queue Backlog
+      - alert: SwarmTicketQueueBacklog
+        expr: |
+          swarm_ticket_queue_depth{state="pending"} > 100
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+          runbook: https://swarmstack.net/runbooks/queue-backlog
+        annotations:
+          summary: "Ticket queue backlog growing"
+          description: "{{ $value }} pending tickets (threshold: 100)"
+          dashboard: "https://grafana.swarmstack.net/d/swarm-ticket-pipeline"
+          impact: "Increased delivery times, potential SLA breaches"
+          action: "Scale up VMs, check for blocked tickets, verify dependencies"
+
+      # Alert 7: Ticket Stuck in Progress
+      - alert: SwarmTicketStuck
+        expr: |
+          (time() - swarm_ticket_state_transition_timestamp{to_state="in_progress"}) > 3600
+        for: 0m
+        labels:
+          severity: warning
+          team: engineering
+          runbook: https://swarmstack.net/runbooks/ticket-stuck
+        annotations:
+          summary: "Ticket stuck in progress"
+          description: "Ticket has been in progress for over 1 hour"
+          dashboard: "https://grafana.swarmstack.net/d/swarm-ticket-pipeline"
+          impact: "Blocked dependencies, delayed downstream work"
+          action: "Check VM status, review agent logs, consider manual intervention"
+
+  - name: swarm_cost_alerts
+    interval: 60s
+    rules:
+      # Alert 8: Cost Spike
+      - alert: SwarmCostSpike
+        expr: |
+          sum(rate(swarm_claude_api_calls_total[1h])) * 0.003 > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          runbook: https://swarmstack.net/runbooks/cost-spike
+        annotations:
+          summary: "Claude API cost spike detected"
+          description: "Estimated hourly cost: ${{ $value | printf \"%.2f\" }} (threshold: $10/hour)"
+          dashboard: "https://grafana.swarmstack.net/d/swarm-agent-performance"
+          impact: "Budget overrun, potential billing surprise"
+          action: "Check for runaway agents, review token usage patterns"
+
+# Recording Rules for Dashboard Pre-aggregation
+  - name: swarm_recording_rules
+    interval: 30s
+    rules:
+      - record: swarm:error_rate:5m
+        expr: |
+          sum(rate(swarm_http_requests_total{status=~"5.."}[5m])) 
+          / sum(rate(swarm_http_requests_total[5m]))
+
+      - record: swarm:agent_success_rate:15m
+        expr: |
+          sum(rate(swarm_agent_operations_total{status="success"}[15m])) 
+          / sum(rate(swarm_agent_operations_total[15m]))
+
+      - record: swarm:vm_boot_p95:5m
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(swarm_vm_boot_duration_seconds_bucket[5m])) by (le))
+
+      - record: swarm:tickets_per_hour:1h
+        expr: |
+          sum(increase(swarm_ticket_state_transitions_total{to_state="completed"}[1h]))

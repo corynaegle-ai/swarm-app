@@ -1,0 +1,544 @@
+/**
+ * SpecReviewPanel.css - Styles for spec review interface
+ */
+
+.spec-review-panel {
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 22, 30, 0.95);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.spec-review-panel.empty {
+  padding: 40px;
+  text-align: center;
+  color: #666;
+}
+
+.spec-review-panel .empty-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+/* Header */
+.spec-header {
+  padding: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.spec-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.spec-title-row h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #fff;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.edit-btn, .save-btn, .cancel-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.edit-btn {
+  background: rgba(0, 212, 255, 0.2);
+  color: #00d4ff;
+}
+
+.edit-btn:hover {
+  background: rgba(0, 212, 255, 0.3);
+}
+
+.save-btn {
+  background: #00ff88;
+  color: #000;
+}
+
+.save-btn:hover {
+  background: #00cc6a;
+}
+
+.cancel-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Tabs */
+.spec-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.spec-tab {
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: all 0.2s;
+  font-size: 14px;
+}
+
+.spec-tab:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.spec-tab.active {
+  color: #00d4ff;
+  background: rgba(0, 212, 255, 0.1);
+  border-bottom: 2px solid #00d4ff;
+}
+
+.spec-tab span {
+  margin-right: 6px;
+}
+
+/* Content */
+.spec-content {
+  padding: 20px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.tab-content {
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Fields */
+.spec-field {
+  margin-bottom: 20px;
+}
+
+.spec-field label {
+  display: block;
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.spec-title {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #fff;
+}
+
+.spec-summary, .spec-text {
+  color: #ccc;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Lists */
+.spec-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #ccc;
+}
+
+.spec-list li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+.spec-list.warning li {
+  color: #ffa500;
+}
+
+.spec-list.info li {
+  color: #00d4ff;
+}
+
+/* Inputs */
+.spec-input, .spec-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.spec-input:focus, .spec-textarea:focus {
+  outline: none;
+  border-color: #00d4ff;
+}
+
+.spec-input.small {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.spec-textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+/* Editable lists */
+.editable-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.list-item-edit {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.list-item-edit .spec-input {
+  flex: 1;
+}
+
+.remove-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: rgba(255, 68, 68, 0.2);
+  color: #ff4444;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.remove-btn:hover {
+  background: rgba(255, 68, 68, 0.3);
+}
+
+.remove-btn.small {
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+}
+
+.add-btn {
+  padding: 8px 12px;
+  background: rgba(0, 255, 136, 0.1);
+  color: #00ff88;
+  border: 1px dashed rgba(0, 255, 136, 0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.add-btn:hover {
+  background: rgba(0, 255, 136, 0.2);
+}
+
+.add-btn.small {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* Users */
+.users-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.user-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-field span {
+  min-width: 80px;
+  color: #888;
+  font-size: 13px;
+}
+
+.user-field .spec-input {
+  flex: 1;
+}
+
+.users-display {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.user-item {
+  color: #ccc;
+}
+
+.user-item strong {
+  color: #00d4ff;
+  margin-right: 8px;
+}
+
+/* Features */
+.features-display, .features-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.feature-card, .feature-card-edit {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.feature-header, .feature-header-edit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.feature-header h4 {
+  margin: 0;
+  flex: 1;
+  color: #fff;
+}
+
+.feature-card-edit .feature-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.priority-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #fff;
+}
+
+.priority-select {
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+}
+
+.feature-description {
+  color: #aaa;
+  font-size: 14px;
+  margin: 0 0 12px 0;
+  line-height: 1.5;
+}
+
+.acceptance-criteria, .acceptance-edit {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.acceptance-criteria h5 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+}
+
+.acceptance-criteria ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.acceptance-criteria li {
+  color: #00ff88;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.acceptance-edit label {
+  font-size: 11px;
+  color: #888;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.acceptance-item {
+  margin-bottom: 6px;
+}
+
+/* Technical */
+.tags-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.tag-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tag-item .spec-input {
+  width: 120px;
+}
+
+.tech-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tech-tag {
+  padding: 6px 12px;
+  background: rgba(147, 112, 219, 0.2);
+  color: #9370db;
+  border-radius: 16px;
+  font-size: 13px;
+}
+
+/* Actions */
+.spec-actions {
+  padding: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.approve-btn, .revision-btn, .submit-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.approve-btn {
+  background: linear-gradient(135deg, #00ff88, #00cc6a);
+  color: #000;
+  flex: 1;
+}
+
+.approve-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 255, 136, 0.3);
+}
+
+.revision-btn {
+  background: rgba(255, 165, 0, 0.2);
+  color: #ffa500;
+  border: 1px solid rgba(255, 165, 0, 0.3);
+}
+
+.revision-btn:hover:not(:disabled) {
+  background: rgba(255, 165, 0, 0.3);
+}
+
+.approve-btn:disabled, .revision-btn:disabled, .submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Revision form */
+.revision-form {
+  width: 100%;
+}
+
+.revision-textarea {
+  width: 100%;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 165, 0, 0.3);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  resize: vertical;
+  min-height: 80px;
+  font-family: inherit;
+}
+
+.revision-textarea:focus {
+  outline: none;
+  border-color: #ffa500;
+}
+
+.revision-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.submit-btn {
+  background: #ffa500;
+  color: #000;
+  flex: 1;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: #cc8400;
+}
+
+/* Scrollbar */
+.spec-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.spec-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.spec-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.spec-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .spec-tabs {
+    overflow-x: auto;
+  }
+  
+  .spec-actions {
+    flex-direction: column;
+  }
+  
+  .approve-btn, .revision-btn {
+    width: 100%;
+  }
+}

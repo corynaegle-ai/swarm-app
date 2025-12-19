@@ -1,0 +1,21 @@
+{
+  "name": "swarm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Swarm - Distributed AI Agent Orchestration Platform",
+  "scripts": {
+    "dev:platform": "pnpm --filter @swarm/platform dev",
+    "dev:dashboard": "pnpm --filter @swarm/dashboard dev",
+    "build:platform": "pnpm --filter @swarm/platform build",
+    "build:dashboard": "pnpm --filter @swarm/dashboard build",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  },
+  "keywords": ["swarm", "ai-agents", "firecracker", "microvm"],
+  "author": "Neural",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

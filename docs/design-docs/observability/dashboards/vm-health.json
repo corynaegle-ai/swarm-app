@@ -1,0 +1,103 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "id": null,
+  "title": "Swarm VM Health",
+  "uid": "swarm-vm-health",
+  "version": 1,
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": ["swarm", "infrastructure", "vms"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active VMs",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum(swarm_vms_active)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } }
+    },
+    {
+      "id": 2,
+      "title": "Total VMs Spawned (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "targets": [{ "expr": "sum(increase(swarm_vms_total[24h]))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 3,
+      "title": "Avg Boot Time",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "targets": [{ "expr": "avg(rate(swarm_vm_boot_duration_ms_sum[5m]) / rate(swarm_vm_boot_duration_ms_count[5m]))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 200 }] } } }
+    },
+    {
+      "id": 4,
+      "title": "Failed Spawns (1h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "targets": [{ "expr": "sum(increase(swarm_vms_total{status=\"failed\"}[1h]))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] } } }
+    },
+    {
+      "id": 5,
+      "title": "Restore vs Cold Boot",
+      "type": "piechart",
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
+      "targets": [{ "expr": "sum by (method) (increase(swarm_vms_total[24h]))", "legendFormat": "{{method}}", "refId": "A" }],
+      "options": { "legend": { "displayMode": "list", "placement": "right" } }
+    },
+    {
+      "id": 6,
+      "title": "VM Lifecycle Status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [{ "expr": "sum by (status) (swarm_vms_total)", "legendFormat": "{{status}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "legend": { "calcs": ["last"], "displayMode": "table" } }
+    },
+    {
+      "id": 7,
+      "title": "Boot Time Distribution",
+      "type": "histogram",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [{ "expr": "sum(rate(swarm_vm_boot_duration_ms_bucket[5m])) by (le)", "format": "heatmap", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 8,
+      "title": "Boot Time Percentiles",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(swarm_vm_boot_duration_ms_bucket[5m])) by (le, method))", "legendFormat": "{{method}} P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(swarm_vm_boot_duration_ms_bucket[5m])) by (le, method))", "legendFormat": "{{method}} P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(swarm_vm_boot_duration_ms_bucket[5m])) by (le, method))", "legendFormat": "{{method}} P99", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 9,
+      "title": "VMs by Tenant",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [{ "expr": "sum by (tenant_id) (swarm_vms_active)", "legendFormat": "{{tenant_id}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 10,
+      "title": "Spawn Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "sum(rate(swarm_vms_total{status=\"running\"}[5m]))", "legendFormat": "Spawned", "refId": "A" },
+        { "expr": "sum(rate(swarm_vms_total{status=\"terminated\"}[5m]))", "legendFormat": "Terminated", "refId": "B" },
+        { "expr": "sum(rate(swarm_vms_total{status=\"failed\"}[5m]))", "legendFormat": "Failed", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    }
+  ]
+}

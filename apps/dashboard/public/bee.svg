@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- Wings -->
+  <ellipse cx="22" cy="26" rx="8" ry="10" fill="rgba(255,255,255,0.85)"/>
+  <ellipse cx="42" cy="26" rx="8" ry="10" fill="rgba(255,255,255,0.85)"/>
+  <!-- Body -->
+  <ellipse cx="32" cy="38" rx="12" ry="16" fill="#1a1a1a"/>
+  <!-- Stripes -->
+  <ellipse cx="32" cy="32" rx="10" ry="4" fill="#fcd34d"/>
+  <ellipse cx="32" cy="42" rx="9" ry="4" fill="#fcd34d"/>
+  <!-- Head -->
+  <circle cx="32" cy="20" r="8" fill="#1a1a1a"/>
+  <!-- Eyes -->
+  <circle cx="29" cy="19" r="2" fill="#fff"/>
+  <circle cx="35" cy="19" r="2" fill="#fff"/>
+  <!-- Antennae -->
+  <line x1="28" y1="13" x2="24" y2="8" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"/>
+  <line x1="36" y1="13" x2="40" y2="8" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round"/>
+</svg>

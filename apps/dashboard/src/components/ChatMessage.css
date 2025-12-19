@@ -1,0 +1,117 @@
+/* ChatMessage.css - Enhanced with slide animations */
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.chat-message {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  animation: slideInLeft 0.3s ease-out;
+}
+
+.chat-message-user {
+  flex-direction: row-reverse;
+  animation: slideInRight 0.3s ease-out;
+}
+
+.chat-message-system {
+  justify-content: center;
+  animation: slideInLeft 0.3s ease-out;
+}
+
+.chat-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.chat-avatar-user {
+  background: linear-gradient(135deg, #00d4ff 0%, #0ea5e9 100%);
+  color: #000;
+  box-shadow: 0 2px 8px rgba(0, 212, 255, 0.3);
+}
+
+.chat-avatar-assistant {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+}
+
+.chat-bubble {
+  max-width: 75%;
+  padding: 0.875rem 1rem;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  word-wrap: break-word;
+}
+
+.chat-bubble-user {
+  background: linear-gradient(135deg, #00d4ff 0%, #0ea5e9 100%);
+  color: #000;
+  border-radius: 1rem 1rem 0.25rem 1rem;
+  box-shadow: 0 2px 12px rgba(0, 212, 255, 0.25);
+}
+
+.chat-bubble-assistant {
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  color: #e4e4e7;
+  border-radius: 1rem 1rem 1rem 0.25rem;
+}
+
+.chat-bubble-system {
+  background: rgba(107, 114, 128, 0.15);
+  border: 1px solid rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
+  border-radius: 0.75rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.chat-message-time {
+  font-size: 0.7rem;
+  color: #52525b;
+  margin-top: 0.25rem;
+}
+
+.chat-message-user .chat-message-time {
+  text-align: right;
+  color: rgba(0, 0, 0, 0.4);
+}
+
+/* Code blocks in messages */
+.chat-bubble pre {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.75rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+  font-size: 0.85rem;
+}
+
+.chat-bubble code {
+  font-family: ui-monospace, monospace;
+}
+
+/* Inline code */
+.chat-bubble p code {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.875em;
+}

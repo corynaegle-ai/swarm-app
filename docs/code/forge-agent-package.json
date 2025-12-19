@@ -1,0 +1,13 @@
+{
+  "name": "forge-agent",
+  "version": "2.0.0",
+  "description": "FORGE coding agent for autonomous PR creation",
+  "main": "main.js",
+  "type": "module",
+  "dependencies": {
+    "node-fetch": "^3.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

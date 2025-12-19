@@ -1,0 +1,28 @@
+-- Agent Learning System - Phase 1 Schema Migration
+CREATE TABLE IF NOT EXISTS agent_executions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  execution_id TEXT UNIQUE NOT NULL,
+  tenant_id TEXT,
+  task_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  project_id TEXT,
+  model TEXT,
+  input_tokens INTEGER DEFAULT 0,
+  output_tokens INTEGER DEFAULT 0,
+  total_tokens INTEGER GENERATED ALWAYS AS (input_tokens + output_tokens) STORED,
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  duration_ms INTEGER,
+  outcome TEXT NOT NULL CHECK(outcome IN ('success', 'failure', 'timeout', 'cancelled')),
+  error_message TEXT,
+  error_category TEXT,
+  files_generated INTEGER DEFAULT 0,
+  pr_url TEXT,
+  criteria_satisfied INTEGER DEFAULT 0,
+  criteria_total INTEGER DEFAULT 0,
+  metadata TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+  FOREIGN KEY (task_id) REFERENCES tickets(id),
+  FOREIGN KEY (project_id) REFERENCES projects(id)
+);

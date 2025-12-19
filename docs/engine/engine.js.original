@@ -1,0 +1,677 @@
+/**
+ * Swarm Execution Engine
+ * Main orchestration loop that polls tickets and dispatches to VMs
+ * 
+ * Architecture:
+ *   Engine (this) → Dispatcher → Executor → VM
+ *   
+ * Responsibilities:
+ *   - Poll tickets.db for ready tickets
+ *   - Dispatch execution to VMs via StepExecutor
+ *   - Collect results and update ticket status
+ *   - Manage concurrency limits
+ *   - Handle graceful shutdown
+ */
+
+import { randomUUID } from 'crypto';
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
+import { join } from 'path';
+import Database from 'better-sqlite3';
+import { StepExecutor } from './executor.js';
+import { WorkflowDispatcher } from './dispatcher.js';
+import { verify, formatFeedbackForRetry, isVerifierHealthy, MAX_ATTEMPTS } from './verifier-client.js';
+
+// Database paths
+const REGISTRY_DB = '/opt/swarm-registry/registry.db';
+const TICKETS_DB = '/opt/swarm-platform/data/swarm.db';  // Fixed: was tickets.db
+const PID_FILE = '/var/run/swarm-engine.pid';
+const LOG_DIR = '/var/log/swarm';
+
+// Ensure log directory exists
+if (!existsSync(LOG_DIR)) {
+    mkdirSync(LOG_DIR, { recursive: true });
+}
+
+/**
+ * Log with timestamp to stdout and optionally to file
+ */
+function log(level, message, toFile = true) {
+    const timestamp = new Date().toISOString();
+    const line = `[${timestamp}] [${level}] ${message}`;
+    
+    if (level === 'ERROR') {
+        console.error(line);
+    } else {
+        console.log(line);
+    }
+    
+    if (toFile) {
+        try {
+            const logFile = join(LOG_DIR, 'engine.log');
+            writeFileSync(logFile, line + '\n', { flag: 'a' });
+        } catch (e) {
+            // Ignore file write errors
+        }
+    }
+}
+
+export class SwarmEngine {
+    constructor(config = {}) {
+        this.maxConcurrentVMs = config.maxVMs || 10;
+        this.pollIntervalMs = config.pollInterval || 5000;
+        this.ticketTimeoutMs = config.ticketTimeout || 300000; // 5 min default
+        this.backoffMaxMs = config.backoffMax || 30000;
+        
+        // Database connections
+        this.registryDb = new Database(REGISTRY_DB);
+        this.ticketsDb = new Database(TICKETS_DB);
+        
+        // Runtime state
+        this.running = false;
+        this.shuttingDown = false;
+        this.activeExecutions = new Map(); // ticketId → { vmId, startTime, executor }
+        this.pollTimer = null;
+        this.currentBackoff = this.pollIntervalMs;
+        
+        // Prepare statements
+        this._prepareStatements();
+        
+        log('INFO', `SwarmEngine initialized (maxVMs=${this.maxConcurrentVMs}, poll=${this.pollIntervalMs}ms)`);
+    }
+    
+    /**
+     * Prepare SQLite statements for performance
+     * Updated 2025-12-12: Aligned with swarm-platform schema
+     */
+    _prepareStatements() {
+        // Ticket queries - using 'state' column (not 'status')
+        this.stmts = {
+            // Get ready tickets (state='ready', has assignee, not already running in VM)
+            getReadyTickets: this.ticketsDb.prepare(`
+                SELECT * FROM tickets 
+                WHERE state = 'ready' 
+                  AND assignee_id IS NOT NULL
+                  AND assignee_type = 'agent'
+                  AND vm_id IS NULL
+                ORDER BY created_at ASC
+                LIMIT ?
+            `),
+            
+            // Claim ticket (atomic update)
+            claimTicket: this.ticketsDb.prepare(`
+                UPDATE tickets 
+                SET state = 'in_progress', vm_id = ?, started_at = datetime('now'), updated_at = datetime('now')
+                WHERE id = ? AND state = 'ready' AND vm_id IS NULL
+            `),
+            
+            // Complete ticket
+            completeTicket: this.ticketsDb.prepare(`
+                UPDATE tickets 
+                SET state = 'done', vm_id = NULL, completed_at = datetime('now'), 
+                    outputs = ?, updated_at = datetime('now')
+                WHERE id = ?
+            `),
+            
+            // Fail ticket
+            failTicket: this.ticketsDb.prepare(`
+                UPDATE tickets 
+                SET state = 'cancelled', vm_id = NULL, completed_at = datetime('now'),
+                    error = ?, rejection_count = rejection_count + 1, updated_at = datetime('now')
+                WHERE id = ?
+            `),
+            
+            // Release ticket (back to ready)
+            releaseTicket: this.ticketsDb.prepare(`
+                UPDATE tickets 
+                SET state = 'ready', vm_id = NULL, started_at = NULL, updated_at = datetime('now')
+                WHERE id = ?
+            `),
+            
+            // Get ticket by ID
+            getTicket: this.ticketsDb.prepare(`SELECT * FROM tickets WHERE id = ?`),
+            
+            // Count active tickets
+            countActive: this.ticketsDb.prepare(`
+                SELECT COUNT(*) as count FROM tickets WHERE state = 'in_progress'
+            `),
+            
+            // VM assignment tracking
+            assignVm: this.registryDb.prepare(`
+                INSERT OR REPLACE INTO vm_assignments (vm_id, ticket_id, assigned_at, status, heartbeat_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP, 'running', CURRENT_TIMESTAMP)
+            `),
+            
+            releaseVm: this.registryDb.prepare(`
+                DELETE FROM vm_assignments WHERE vm_id = ?
+            `),
+            
+            // Artifact storage
+            storeArtifact: this.registryDb.prepare(`
+                INSERT INTO execution_artifacts (id, ticket_id, artifact_type, content, created_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+            `),
+            
+            // Get agent by ID
+            getAgent: this.registryDb.prepare(`
+                SELECT * FROM agents WHERE id = ? OR name = ?
+            `),
+            
+            // === Verification Integration (Phase 7) ===
+            
+            // Block ticket after max verification failures
+            blockTicket: this.ticketsDb.prepare(`
+                UPDATE tickets 
+                SET state = 'blocked', vm_id = NULL, 
+                    verification_status = 'failed',
+                    error = ?, updated_at = datetime('now')
+                WHERE id = ?
+            `),
+            
+            // Update verification status
+            setVerificationStatus: this.ticketsDb.prepare(`
+                UPDATE tickets 
+                SET verification_status = ?,
+                    verification_evidence = ?,
+                    updated_at = datetime('now')
+                WHERE id = ?
+            `),
+            
+            // Set ticket to verifying state
+            setVerifying: this.ticketsDb.prepare(`
+                UPDATE tickets 
+                SET state = 'verifying', updated_at = datetime('now')
+                WHERE id = ?
+            `),
+            
+            // Get rejection count
+            getRejectionCount: this.ticketsDb.prepare(`
+                SELECT rejection_count FROM tickets WHERE id = ?
+            `),
+            
+            // Increment rejection count (for retry tracking)
+            incrementRejection: this.ticketsDb.prepare(`
+                UPDATE tickets 
+                SET rejection_count = rejection_count + 1, updated_at = datetime('now')
+                WHERE id = ?
+            `)
+        };
+    }
+    
+    /**
+     * Start the engine main loop
+     */
+    async start() {
+        if (this.running) {
+            log('WARN', 'Engine already running');
+            return;
+        }
+        
+        this.running = true;
+        this.shuttingDown = false;
+        
+        // Write PID file
+        try {
+            writeFileSync(PID_FILE, process.pid.toString());
+            log('INFO', `Engine started (PID ${process.pid})`);
+        } catch (e) {
+            log('WARN', `Could not write PID file: ${e.message}`);
+        }
+        
+        // Setup signal handlers
+        this._setupSignalHandlers();
+        
+        // Start polling loop
+        await this._pollLoop();
+    }
+    
+    /**
+     * Stop the engine gracefully
+     */
+    async stop() {
+        if (!this.running) {
+            log('WARN', 'Engine not running');
+            return;
+        }
+        
+        log('INFO', 'Initiating graceful shutdown...');
+        this.shuttingDown = true;
+        
+        // Stop accepting new work
+        if (this.pollTimer) {
+            clearTimeout(this.pollTimer);
+            this.pollTimer = null;
+        }
+        
+        // Wait for active executions to complete (with timeout)
+        const shutdownTimeout = 60000; // 1 minute
+        const startTime = Date.now();
+        
+        while (this.activeExecutions.size > 0 && (Date.now() - startTime) < shutdownTimeout) {
+            log('INFO', `Waiting for ${this.activeExecutions.size} active executions...`);
+            await new Promise(r => setTimeout(r, 2000));
+        }
+        
+        if (this.activeExecutions.size > 0) {
+            log('WARN', `Force stopping ${this.activeExecutions.size} executions`);
+            for (const [ticketId, exec] of this.activeExecutions) {
+                await this._releaseExecution(ticketId, exec, 'Shutdown forced');
+            }
+        }
+        
+        // Cleanup
+        this.running = false;
+        this.registryDb.close();
+        this.ticketsDb.close();
+        
+        // Remove PID file
+        try {
+            if (existsSync(PID_FILE)) {
+                require('fs').unlinkSync(PID_FILE);
+            }
+        } catch (e) {
+            // Ignore
+        }
+        
+        log('INFO', 'Engine stopped');
+    }
+    
+    /**
+     * Setup signal handlers for graceful shutdown
+     */
+    _setupSignalHandlers() {
+        const shutdown = async (signal) => {
+            log('INFO', `Received ${signal}`);
+            await this.stop();
+            process.exit(0);
+        };
+        
+        process.on('SIGTERM', () => shutdown('SIGTERM'));
+        process.on('SIGINT', () => shutdown('SIGINT'));
+    }
+    
+    /**
+     * Main polling loop
+     */
+    async _pollLoop() {
+        while (this.running && !this.shuttingDown) {
+            try {
+                const processed = await this._pollOnce();
+                
+                // Adaptive backoff
+                if (processed > 0) {
+                    this.currentBackoff = this.pollIntervalMs;
+                } else {
+                    this.currentBackoff = Math.min(this.currentBackoff * 1.5, this.backoffMaxMs);
+                }
+                
+            } catch (e) {
+                log('ERROR', `Poll error: ${e.message}`);
+                this.currentBackoff = this.backoffMaxMs;
+            }
+            
+            // Wait before next poll
+            if (this.running && !this.shuttingDown) {
+                await new Promise(r => {
+                    this.pollTimer = setTimeout(r, this.currentBackoff);
+                });
+            }
+        }
+    }
+    
+    /**
+     * Single poll iteration
+     * @returns {number} Number of tickets dispatched
+     */
+    async _pollOnce() {
+        // Check capacity
+        const activeCount = this.activeExecutions.size;
+        const available = this.maxConcurrentVMs - activeCount;
+        
+        if (available <= 0) {
+            return 0;
+        }
+        
+        // Get ready tickets
+        const tickets = this.stmts.getReadyTickets.all(available);
+        
+        if (tickets.length === 0) {
+            return 0;
+        }
+        
+        log('INFO', `Found ${tickets.length} ready tickets (capacity: ${available})`);
+        
+        // Dispatch each ticket
+        let dispatched = 0;
+        for (const ticket of tickets) {
+            if (this.shuttingDown) break;
+            
+            try {
+                await this.executeTicket(ticket);
+                dispatched++;
+            } catch (e) {
+                log('ERROR', `Failed to dispatch ticket ${ticket.id}: ${e.message}`);
+            }
+        }
+        
+        return dispatched;
+    }
+    
+    /**
+     * Execute a single ticket
+     */
+    async executeTicket(ticket) {
+        const ticketId = ticket.id.toString();
+        log('INFO', `Dispatching ticket ${ticketId}: ${ticket.title}`);
+        
+        // Parse inputs
+        let inputs = {};
+        try {
+            inputs = ticket.inputs ? JSON.parse(ticket.inputs) : {};
+        } catch (e) {
+            inputs = {};
+        }
+        
+        // Create executor
+        const runId = randomUUID();
+        const executor = new StepExecutor(runId, { 
+            db: this.registryDb, 
+            useVm: true,
+            vmTimeout: this.ticketTimeoutMs,
+            skipStepLogging: true  // Single agent execution, no multi-step logging needed
+        });
+        
+        // NOTE: VM acquisition handled by executor.runAgentInVm()
+        // Using placeholder vmId=0 for tracking
+        const vmId = 0;
+        
+        // Claim ticket atomically
+        const claimed = this.stmts.claimTicket.run(vmId, ticketId);
+        if (claimed.changes === 0) {
+            // Race condition - another process claimed it
+            log('WARN', `Ticket ${ticketId} already claimed`);
+            return;
+        }
+        
+        // Track assignment
+        this.stmts.assignVm.run(vmId, ticketId);
+        this.activeExecutions.set(ticketId, { 
+            vmId, 
+            executor, 
+            startTime: Date.now(),
+            runId 
+        });
+        
+        // Execute asynchronously (don't block polling)
+        this._executeAsync(ticket, executor, vmId, inputs).catch(e => {
+            log('ERROR', `Async execution error for ticket ${ticketId}: ${e.message}`);
+        });
+    }
+    
+    /**
+     * Async ticket execution (runs in background)
+     * Updated 2025-12-14: Phase 7 - Verification integration with retry loop
+     */
+    async _executeAsync(ticket, executor, vmId, inputs) {
+        const ticketId = ticket.id.toString();
+        const startTime = Date.now();
+        
+        // Get current rejection count for retry tracking
+        let attemptNumber = (ticket.rejection_count || 0) + 1;
+        let verificationFeedback = null;
+        
+        try {
+            let result;
+            let verificationResult = null;
+            
+            // === EXECUTION LOOP WITH VERIFICATION ===
+            // Retry up to MAX_ATTEMPTS times if verification fails
+            while (attemptNumber <= MAX_ATTEMPTS) {
+                log('INFO', `Ticket ${ticketId} - Attempt ${attemptNumber}/${MAX_ATTEMPTS}`);
+                
+                // Branch based on execution_mode
+                if (ticket.execution_mode === 'workflow' && ticket.workflow_id) {
+                    // Workflow execution - use WorkflowDispatcher
+                    log('INFO', `Executing ticket ${ticketId} as workflow (workflow_id: ${ticket.workflow_id})`);
+                    
+                    const dispatcher = new WorkflowDispatcher({ useVm: true });
+                    try {
+                        // Include verification feedback in inputs if this is a retry
+                        const workflowInputs = {
+                            ...inputs,
+                            ticket: ticket,
+                            projectSettings: {}
+                        };
+                        if (verificationFeedback) {
+                            workflowInputs.verification_feedback = verificationFeedback;
+                        }
+                        
+                        const workflowResult = await dispatcher.runWorkflowForTicket(
+                            ticket.workflow_id,
+                            ticketId,
+                            workflowInputs
+                        );
+                        
+                        result = {
+                            status: workflowResult.status,
+                            runId: workflowResult.runId,
+                            outputs: workflowResult.results,
+                            error: workflowResult.error
+                        };
+                    } finally {
+                        dispatcher.close();
+                    }
+                    
+                } else if (ticket.assignee_type === 'agent' && ticket.assignee_id) {
+                    // Single agent execution
+                    const agent = this.stmts.getAgent.get(ticket.assignee_id, ticket.assignee_id);
+                    if (!agent) {
+                        throw new Error(`Agent not found: ${ticket.assignee_id}`);
+                    }
+                    
+                    // Include verification feedback in inputs if this is a retry
+                    const agentInputs = {
+                        ...inputs,
+                        ticket: ticket,
+                        projectSettings: {}
+                    };
+                    if (verificationFeedback) {
+                        agentInputs.verification_feedback = verificationFeedback;
+                    }
+                    
+                    result = await executor.executeStep({
+                        id: ticketId,
+                        agent: agent.name,
+                        agent_version: agent.version,
+                        inputs: agentInputs
+                    }, { trigger: inputs });
+                } else {
+                    throw new Error('Ticket has no valid execution mode (needs workflow_id or agent assignment)');
+                }
+                
+                // === VERIFICATION PHASE ===
+                // Only verify if ticket has branch_name (code was pushed)
+                if (ticket.branch_name) {
+                    this.stmts.setVerifying.run(ticketId);
+                    log('INFO', `Ticket ${ticketId} - Running verification...`);
+                    
+                    // Parse acceptance criteria
+                    let acceptanceCriteria = null;
+                    try {
+                        if (ticket.acceptance_criteria) {
+                            acceptanceCriteria = JSON.parse(ticket.acceptance_criteria);
+                        }
+                    } catch (e) {
+                        log('WARN', `Could not parse acceptance_criteria: ${e.message}`);
+                    }
+                    
+                    // Get repo URL from project or ticket
+                    const repoUrl = inputs.repoUrl || ticket.repo_url || 
+                        (inputs.projectSettings?.repoUrl);
+                    
+                    if (!repoUrl) {
+                        log('WARN', `Ticket ${ticketId} - No repo URL, skipping verification`);
+                        verificationResult = { status: 'skipped', ready_for_pr: true };
+                    } else {
+                        verificationResult = await verify({
+                            ticketId,
+                            branchName: ticket.branch_name,
+                            repoUrl,
+                            attempt: attemptNumber,
+                            acceptanceCriteria,
+                            phases: ['static', 'automated', 'sentinel']
+                        });
+                    }
+                    
+                    // Store verification evidence
+                    this.stmts.setVerificationStatus.run(
+                        verificationResult.status,
+                        JSON.stringify(verificationResult),
+                        ticketId
+                    );
+                    
+                    if (verificationResult.status === 'passed' || verificationResult.ready_for_pr) {
+                        log('INFO', `Ticket ${ticketId} - Verification PASSED (score: ${verificationResult.sentinel_score || 'N/A'})`);
+                        break; // Exit loop - success!
+                    } else {
+                        // Verification failed
+                        log('WARN', `Ticket ${ticketId} - Verification FAILED at phase: ${verificationResult.failed_phase}`);
+                        
+                        // Prepare feedback for retry
+                        verificationFeedback = formatFeedbackForRetry(verificationResult.feedback_for_agent);
+                        
+                        // Increment rejection count
+                        this.stmts.incrementRejection.run(ticketId);
+                        attemptNumber++;
+                        
+                        if (attemptNumber > MAX_ATTEMPTS) {
+                            // Max retries exceeded - block ticket
+                            log('ERROR', `Ticket ${ticketId} - Max verification attempts (${MAX_ATTEMPTS}) exceeded, blocking`);
+                            
+                            const blockReason = `Verification failed ${MAX_ATTEMPTS} times. Last failure: ${verificationResult.failed_phase}. Feedback: ${verificationResult.feedback_for_agent?.join('; ')}`;
+                            this.stmts.blockTicket.run(blockReason, ticketId);
+                            
+                            // Store final failure artifact
+                            this.stmts.storeArtifact.run(
+                                randomUUID(), 
+                                ticketId, 
+                                'verification_blocked', 
+                                JSON.stringify(verificationResult)
+                            );
+                            
+                            return; // Exit - ticket is blocked
+                        }
+                        
+                        log('INFO', `Ticket ${ticketId} - Retrying with feedback (attempt ${attemptNumber})`);
+                    }
+                } else {
+                    // No branch - skip verification
+                    log('INFO', `Ticket ${ticketId} - No branch_name, skipping verification`);
+                    verificationResult = { status: 'skipped', ready_for_pr: false };
+                    break;
+                }
+            }
+            
+            // === SUCCESS - All phases complete ===
+            const duration = Date.now() - startTime;
+            log('INFO', `Ticket ${ticketId} completed in ${duration}ms`);
+            
+            // Store result
+            const outputJson = JSON.stringify({
+                ...result,
+                verification: verificationResult
+            });
+            this.stmts.completeTicket.run(outputJson, ticketId);
+            
+            // Store artifacts
+            if (result?.stdout) {
+                this.stmts.storeArtifact.run(randomUUID(), ticketId, 'stdout', result.stdout);
+            }
+            if (result?.stderr) {
+                this.stmts.storeArtifact.run(randomUUID(), ticketId, 'stderr', result.stderr);
+            }
+            
+        } catch (e) {
+            const duration = Date.now() - startTime;
+            log('ERROR', `Ticket ${ticketId} failed after ${duration}ms: ${e.message}`);
+            
+            this.stmts.failTicket.run(e.message, ticketId);
+            this.stmts.storeArtifact.run(randomUUID(), ticketId, 'error', e.stack || e.message);
+            
+        } finally {
+            // Cleanup
+            await this._releaseExecution(ticketId, this.activeExecutions.get(ticketId));
+        }
+    }
+    
+    /**
+     * Release VM and cleanup execution tracking
+     */
+    async _releaseExecution(ticketId, exec, reason = null) {
+        if (!exec) return;
+        
+        try {
+            // VM release handled by executor.runAgentInVm() finally block
+            this.stmts.releaseVm.run(exec.vmId);
+        } catch (e) {
+            log('WARN', `Error releasing VM ${exec.vmId}: ${e.message}`);
+        }
+        
+        this.activeExecutions.delete(ticketId);
+        
+        if (reason) {
+            this.stmts.failTicket.run(reason, ticketId);
+        }
+    }
+    
+    /**
+     * Get engine status
+     */
+    getStatus() {
+        const activeCount = this.activeExecutions.size;
+        const pendingCount = this.stmts.getReadyTickets.all(100).length;
+        
+        return {
+            running: this.running,
+            shuttingDown: this.shuttingDown,
+            activeExecutions: activeCount,
+            pendingTickets: pendingCount,
+            maxVMs: this.maxConcurrentVMs,
+            availableSlots: this.maxConcurrentVMs - activeCount,
+            uptime: process.uptime(),
+            pid: process.pid
+        };
+    }
+    
+    /**
+     * Run a single ticket by ID (for testing/debugging)
+     */
+    async runTicket(ticketId, options = {}) {
+        const ticket = this.stmts.getTicket.get(ticketId);
+        if (!ticket) {
+            throw new Error(`Ticket not found: ${ticketId}`);
+        }
+        
+        if (ticket.state !== 'ready') {
+            throw new Error(`Ticket ${ticketId} is not ready (state: ${ticket.state})`);
+        }
+        
+        await this.executeTicket(ticket);
+        
+        // Wait for completion if requested
+        if (options.wait) {
+            const timeout = options.timeout || 300000;
+            const start = Date.now();
+            
+            while (this.activeExecutions.has(ticketId.toString())) {
+                if (Date.now() - start > timeout) {
+                    throw new Error('Execution timeout');
+                }
+                await new Promise(r => setTimeout(r, 1000));
+            }
+            
+            return this.stmts.getTicket.get(ticketId);
+        }
+    }
+}
+
+export default SwarmEngine;

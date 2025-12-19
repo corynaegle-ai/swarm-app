@@ -1,0 +1,543 @@
+import './Tickets.css';
+/**
+ * Tickets Dashboard - Premium dark-themed ticket management
+ */
+import { useState, useEffect, useCallback } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Bot, User, RefreshCw, Plus, X, Filter, Search, Loader2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import Sidebar from '../components/Sidebar';
+import useTickets from '../hooks/useTickets';
+
+const STATE_CONFIG = {
+  draft: { label: 'Draft', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.15)', glow: '#6b7280' },
+  ready: { label: 'Ready', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)', glow: '#3b82f6' },
+  blocked: { label: 'Blocked', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.15)', glow: '#ef4444' },
+  on_hold: { label: 'On Hold', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.15)', glow: '#f59e0b' },
+  assigned: { label: 'Assigned', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.15)', glow: '#8b5cf6' },
+  in_progress: { label: 'In Progress', color: '#00d4ff', bg: 'rgba(0, 212, 255, 0.15)', glow: '#00d4ff' },
+  verifying: { label: 'Verifying', color: '#f97316', bg: 'rgba(249, 115, 22, 0.15)', glow: '#f97316' },
+  in_review: { label: 'In Review', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)', glow: '#a855f7' },
+  changes_requested: { label: 'Changes', color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.15)', glow: '#f43f5e' },
+  done: { label: 'Done', color: '#10b981', bg: 'rgba(16, 185, 129, 0.15)', glow: '#10b981' },
+  needs_review: { label: 'Needs Review', color: '#fb923c', bg: 'rgba(251, 146, 60, 0.15)', glow: '#fb923c' },
+  cancelled: { label: 'Cancelled', color: '#4b5563', bg: 'rgba(75, 85, 99, 0.15)', glow: '#4b5563' }
+};
+
+const SCOPE_CONFIG = {
+  small: { label: 'S', color: '#10b981', hint: 'Small' },
+  medium: { label: 'M', color: '#f59e0b', hint: 'Medium' },
+  large: { label: 'L', color: '#ef4444', hint: 'Large' }
+};
+
+
+export default function Tickets() {
+  const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { listTickets, getStats, getProjects, updateTicket, createTicket, loading, error } = useTickets();
+  
+  const [tickets, setTickets] = useState([]);
+  const [stats, setStats] = useState({ total: 0, byState: {} });
+  const [projects, setProjects] = useState([]);
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [filterState, setFilterState] = useState(searchParams.get('state') || '');
+  const [filterProject, setFilterProject] = useState(searchParams.get('project') || '');
+  const [localError, setLocalError] = useState(null);
+  const [showNewTicket, setShowNewTicket] = useState(false);
+  const [newTicket, setNewTicket] = useState({ title: '', description: '', project_id: '', estimated_scope: 'M' });
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      const [ticketData, statsData, projectData] = await Promise.all([
+        listTickets({ state: filterState || undefined, projectId: filterProject || undefined }),
+        getStats(),
+        getProjects()
+      ]);
+      setTickets(ticketData.tickets || []);
+      setStats(statsData);
+      setProjects(projectData.projects || []);
+      setLocalError(null);
+    } catch (err) {
+      setLocalError(err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [listTickets, getStats, getProjects, filterState, filterProject]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (filterState) params.set('state', filterState);
+    if (filterProject) params.set('project', filterProject);
+    setSearchParams(params, { replace: true });
+  }, [filterState, filterProject, setSearchParams]);
+
+  const handleStateChange = async (ticketId, newState) => {
+    try {
+      await updateTicket(ticketId, { state: newState });
+      await fetchData();
+      setSelectedTicket(prev => prev ? { ...prev, state: newState } : null);
+    } catch (err) {
+      alert('Failed to update: ' + err.message);
+    }
+  };
+  const handleCreateTicket = async (e) => {
+    e.preventDefault();
+    if (!newTicket.title.trim()) {
+      alert("Title is required");
+      return;
+    }
+    try {
+      await createTicket(newTicket);
+      setShowNewTicket(false);
+      setNewTicket({ title: "", description: "", project_id: "", estimated_scope: 'M' });
+      await fetchData();
+    } catch (err) {
+      alert("Failed to create ticket: " + err.message);
+    }
+  };
+
+
+  const getProjectName = (projectId) => {
+    const project = projects.find(p => p.id === projectId);
+    return project?.name || 'Unknown';
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return d.toLocaleDateString();
+  };
+
+
+  // Calculate active filters count
+  const activeFilters = [filterState, filterProject].filter(Boolean).length;
+
+  return (
+    <div className="page-container">
+      
+      <Sidebar />
+      
+      <main className="page-main">
+        {/* Hero Stats Section */}
+        <div className="tickets-hero">
+          <div className="hero-title">
+            <h2>Ticket Management</h2>
+            <p className="hero-subtitle">Track and manage your agent work queue</p>
+          </div>
+          <div className="hero-stats">
+            <div className="hero-stat total">
+              <span className="stat-number">{stats.total || 0}</span>
+              <span className="stat-label">Total Tickets</span>
+            </div>
+            <div className="hero-stat active">
+              <span className="stat-number">
+                {(stats.byState?.in_progress || 0) + (stats.byState?.assigned || 0)}
+              </span>
+              <span className="stat-label">Active</span>
+            </div>
+            <div className="hero-stat pending">
+              <span className="stat-number">
+                {(stats.byState?.ready || 0) + (stats.byState?.needs_review || 0)}
+              </span>
+              <span className="stat-label">Pending</span>
+            </div>
+            <div className="hero-stat done">
+              <span className="stat-number">{stats.byState?.done || 0}</span>
+              <span className="stat-label">Completed</span>
+            </div>
+          </div>
+        </div>
+
+        {/* State Pills - Clickable Filters */}
+        <div className="state-pills">
+          {Object.entries(stats.byState || {}).filter(([_, count]) => count > 0).map(([state, count]) => (
+            <button
+              key={state}
+              className={`state-pill ${filterState === state ? 'active' : ''}`}
+              style={{
+                '--pill-color': STATE_CONFIG[state]?.color,
+                '--pill-bg': STATE_CONFIG[state]?.bg,
+                '--pill-glow': STATE_CONFIG[state]?.glow
+              }}
+              onClick={() => setFilterState(filterState === state ? '' : state)}
+            >
+              <span className="pill-count">{count}</span>
+              <span className="pill-label">{STATE_CONFIG[state]?.label || state}</span>
+            </button>
+          ))}
+        </div>
+
+
+        {/* Filter Toolbar */}
+        <div className="filters-toolbar">
+          <div className="filter-group">
+            <div className="filter-select-wrapper">
+              <select 
+                value={filterState} 
+                onChange={e => setFilterState(e.target.value)}
+                className="filter-select"
+              >
+                <option value="">All States</option>
+                {Object.entries(STATE_CONFIG).map(([key, cfg]) => (
+                  <option key={key} value={key}>{cfg.label}</option>
+                ))}
+              </select>
+              <span className="select-arrow">▾</span>
+            </div>
+            <div className="filter-select-wrapper">
+              <select 
+                value={filterProject} 
+                onChange={e => setFilterProject(e.target.value)}
+                className="filter-select"
+              >
+                <option value="">All Projects</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <span className="select-arrow">▾</span>
+            </div>
+            {activeFilters > 0 && (
+              <button 
+                className="clear-filters"
+                onClick={() => { setFilterState(''); setFilterProject(''); }}
+              >
+                Clear ({activeFilters})
+              </button>
+            )}
+          </div>
+          <button 
+            className={`refresh-btn ${refreshing ? 'spinning' : ''}`}
+            onClick={fetchData}
+            disabled={loading || refreshing}
+          >
+            <span className="refresh-icon">↻</span>
+            {refreshing ? "Refreshing..." : "Refresh"}</button>
+          <button className="new-ticket-btn" onClick={() => setShowNewTicket(true)}>+ New Ticket</button>
+          <Link to="/tickets/kanban" className="kanban-link">📋 Kanban</Link>
+        </div>
+
+        {/* Error Banner */}
+        {(error || localError) && (
+          <div className="error-banner">
+            <span className="error-icon">⚠</span>
+            {error || localError}
+            <button className="error-dismiss" onClick={() => setLocalError(null)}>×</button>
+          </div>
+        )}
+
+        {/* Tickets Table */}
+        <div className="tickets-container">
+          <table className="tickets-table">
+            <thead>
+              <tr>
+                <th className="th-title">Ticket</th>
+                <th className="th-project">Project</th>
+                <th className="th-state">State</th>
+                <th className="th-scope">Scope</th>
+                <th className="th-assignee">Assignee</th>
+                <th className="th-updated">Updated</th>
+                <th className="th-actions"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && tickets.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="loading-row">
+                    <div className="loading-pulse"></div>
+                    Loading tickets...
+                  </td>
+                </tr>
+              ) : tickets.length === 0 ? (
+                <tr>
+                  <td colSpan="7" className="empty-row">
+                    <div className="empty-state">
+                      <span className="empty-icon">📋</span>
+                      <p>No tickets found</p>
+                      <span className="empty-hint">
+                        {activeFilters > 0 ? 'Try adjusting your filters' : 'Create a project to generate tickets'}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ) : tickets.map(ticket => (
+                <tr 
+                  key={ticket.id} 
+                  className="ticket-row"
+                  onClick={() => setSelectedTicket(ticket)}
+                >
+                  <td className="td-title">
+                    <div className="ticket-title-cell">
+                      <span className="ticket-id">#{ticket.id}</span>
+                      <span className="ticket-title">{ticket.title}</span>
+                      {ticket.vm_id && (
+                        <Link 
+                          to={`/vms?highlight=${ticket.vm_id}`} 
+                          className="vm-badge"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          VM {ticket.vm_id}
+                        </Link>
+                      )}
+                      {ticket.pr_url && (
+                        <a 
+                          href={ticket.pr_url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="pr-badge"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          PR
+                        </a>
+                      )}
+                    </div>
+                  </td>
+                  <td className="td-project">
+                    <span className="project-name">{getProjectName(ticket.project_id)}</span>
+                  </td>
+                  <td className="td-state">
+                    <span 
+                      className="state-badge"
+                      style={{
+                        color: STATE_CONFIG[ticket.state]?.color,
+                        backgroundColor: STATE_CONFIG[ticket.state]?.bg,
+                        boxShadow: `0 0 12px ${STATE_CONFIG[ticket.state]?.bg}`
+                      }}
+                    >
+                      {STATE_CONFIG[ticket.state]?.label || ticket.state}
+                    </span>
+                  </td>
+                  <td className="td-scope">
+                    {ticket.estimated_scope && (
+                      <span 
+                        className="scope-badge"
+                        style={{ color: SCOPE_CONFIG[ticket.estimated_scope]?.color }}
+                        title={SCOPE_CONFIG[ticket.estimated_scope]?.hint}
+                      >
+                        {SCOPE_CONFIG[ticket.estimated_scope]?.label}
+                      </span>
+                    )}
+                  </td>
+                  <td className="td-assignee">
+                    <span className="assignee-badge">
+                      {ticket.assignee_type === 'agent' ? <Bot size={14} /> : <User size={14} />}
+                      <span className="assignee-id">{ticket.assignee_id || '—'}</span>
+                    </span>
+                  </td>
+                  <td className="td-updated">
+                    <span className="time-ago">{formatDate(ticket.updated_at)}</span>
+                  </td>
+                  <td className="td-actions">
+                    <button 
+                      className="view-btn"
+                      onClick={e => { e.stopPropagation(); setSelectedTicket(ticket); }}
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+
+        {/* Ticket Detail Modal */}
+        {selectedTicket && (
+          <div className="modal-overlay" onClick={() => setSelectedTicket(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <div className="modal-title-area">
+                  <span className="modal-ticket-id">#{selectedTicket.id}</span>
+                  <h2>{selectedTicket.title}</h2>
+                </div>
+                <button className="modal-close" onClick={() => setSelectedTicket(null)}>×</button>
+              </div>
+              
+              <div className="modal-body">
+                <div className="detail-grid">
+                  <div className="detail-item">
+                    <label>State</label>
+                    <select 
+                      value={selectedTicket.state}
+                      onChange={e => handleStateChange(selectedTicket.id, e.target.value)}
+                      className="state-select"
+                      style={{
+                        borderColor: STATE_CONFIG[selectedTicket.state]?.color,
+                        color: STATE_CONFIG[selectedTicket.state]?.color
+                      }}
+                    >
+                      {Object.entries(STATE_CONFIG).map(([key, cfg]) => (
+                        <option key={key} value={key}>{cfg.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="detail-item">
+                    <label>Project</label>
+                    <span className="detail-value">{getProjectName(selectedTicket.project_id)}</span>
+                  </div>
+                  
+                  <div className="detail-item">
+                    <label>Scope</label>
+                    <span className="detail-value">
+                      {selectedTicket.estimated_scope ? (
+                        <span style={{ color: SCOPE_CONFIG[selectedTicket.estimated_scope]?.color }}>
+                          {SCOPE_CONFIG[selectedTicket.estimated_scope]?.hint}
+                        </span>
+                      ) : '—'}
+                    </span>
+                  </div>
+                  
+                  <div className="detail-item">
+                    <label>Assignee</label>
+                    <span className="detail-value">
+                      {selectedTicket.assignee_type === 'agent' ? <><Bot size={14} /> Agent</> : <><User size={14} /> Human</>}
+                      {selectedTicket.assignee_id ? `: ${selectedTicket.assignee_id}` : ' (Unassigned)'}
+                    </span>
+                  </div>
+                </div>
+
+                {selectedTicket.vm_id && (
+                  <div className="detail-link-row">
+                    <label>Virtual Machine</label>
+                    <Link to={`/vms?highlight=${selectedTicket.vm_id}`} className="detail-link">
+                      View VM #{selectedTicket.vm_id} →
+                    </Link>
+                  </div>
+                )}
+
+                {selectedTicket.branch_name && (
+                  <div className="detail-link-row">
+                    <label>Branch</label>
+                    <code className="branch-code">{selectedTicket.branch_name}</code>
+                  </div>
+                )}
+
+                {selectedTicket.pr_url && (
+                  <div className="detail-link-row">
+                    <label>Pull Request</label>
+                    <a href={selectedTicket.pr_url} target="_blank" rel="noopener noreferrer" className="detail-link">
+                      {selectedTicket.pr_url.replace('https://github.com/', '')} →
+                    </a>
+                  </div>
+                )}
+
+                <div className="detail-block">
+                  <label>Description</label>
+                  <div className="description-box">
+                    {selectedTicket.description || 'No description provided'}
+                  </div>
+                </div>
+
+                {selectedTicket.acceptance_criteria && (
+                  <div className="detail-block">
+                    <label>Acceptance Criteria</label>
+                    <div className="description-box criteria">
+                      {selectedTicket.acceptance_criteria}
+                    </div>
+                  </div>
+                )}
+
+                <div className="detail-timestamps">
+                  <span>Created: {new Date(selectedTicket.created_at).toLocaleString()}</span>
+                  <span>Updated: {new Date(selectedTicket.updated_at).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* New Ticket Modal */}
+        {showNewTicket && (
+          <div className="modal-overlay" onClick={() => setShowNewTicket(false)}>
+            <div className="modal-content new-ticket-modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Create New Ticket</h2>
+                <button className="modal-close" onClick={() => setShowNewTicket(false)}>×</button>
+              </div>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>Title *</label>
+                  <input
+                    type="text"
+                    value={newTicket.title}
+                    onChange={e => setNewTicket({...newTicket, title: e.target.value})}
+                    placeholder="Enter ticket title..."
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Description</label>
+                  <textarea
+                    value={newTicket.description}
+                    onChange={e => setNewTicket({...newTicket, description: e.target.value})}
+                    placeholder="Describe the work to be done..."
+                    className="form-textarea"
+                    rows={6}
+                  />
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Project</label>
+                    <select
+                      value={newTicket.project_id}
+                      onChange={e => setNewTicket({...newTicket, project_id: e.target.value})}
+                      className="form-select"
+                    >
+                      <option value="">No Project</option>
+                      {projects.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Estimated Scope</label>
+                    <div className="scope-selector">
+                      {['S', 'M', 'L'].map(scope => (
+                        <button
+                          key={scope}
+                          type="button"
+                          className={`scope-btn ${newTicket.estimated_scope === scope ? 'active' : ''}`}
+                          onClick={() => setNewTicket({...newTicket, estimated_scope: scope})}
+                        >
+                          {scope}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="form-actions">
+                  <button className="cancel-btn" onClick={() => setShowNewTicket(false)}>Cancel</button>
+                  <button 
+                    className="create-btn" 
+                    onClick={handleCreateTicket}
+                    disabled={!newTicket.title.trim()}
+                  >
+                    Create Ticket
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+
+    </main>
+    </div>
+  );
+}

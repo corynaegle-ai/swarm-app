@@ -1,0 +1,419 @@
+/**
+ * DesignSession - Interactive chat interface for HITL clarification flow
+ * Allows continuous conversation and spec revision
+ */
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import Sidebar from '../components/Sidebar';
+import ChatMessage from '../components/ChatMessage';
+import TypingIndicator from '../components/TypingIndicator';
+import SpecModal from '../components/SpecModal';
+import useHITL from '../hooks/useHITL';
+import { useSessionWebSocket } from '../hooks';
+import RepoSetupModal from '../components/RepoSetupModal';
+import {
+  Send, FileText, CheckCircle2, Edit3, Ticket, Eye,
+  Loader2, MessageSquare, Target, Workflow
+} from 'lucide-react';
+import '../layout.css';
+import './DesignSession.css';
+
+const STATE_CONFIG = {
+  input: { label: 'Input', color: '#6b7280' },
+  clarifying: { label: 'Clarifying', color: '#00d4ff' },
+  ready_for_docs: { label: 'Ready for Spec', color: '#f59e0b' },
+  reviewing: { label: 'Review Spec', color: '#a855f7' },
+  approved: { label: 'Approved', color: '#22c55e' },
+  building: { label: 'Building', color: '#8b5cf6' },
+  completed: { label: 'Complete', color: '#10b981' },
+  failed: { label: 'Failed', color: '#ef4444' }
+};
+
+export default function DesignSession() {
+  const { sessionId } = useParams();
+  const navigate = useNavigate();
+  const { getSession, respond, generateSpec, approveSpec, requestRevision, loading, error } = useHITL();
+  
+  const [session, setSession] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+  const [localError, setLocalError] = useState(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [showRepoModal, setShowRepoModal] = useState(false);
+  const [showSpecModal, setShowSpecModal] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const { isConnected } = useSessionWebSocket(sessionId, {
+    onSessionUpdate: (data) => {
+      setSession(prev => prev ? { ...prev, state: data.state, progress_percent: data.progress } : prev);
+    },
+    onNewMessage: (data) => {
+      const msg = data.message || data;
+      if (msg?.content) {
+        setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+        setIsTyping(false);
+      }
+    },
+    onSpecGenerated: (data) => {
+      const spec = data.spec || data;
+      if (spec) {
+        setSession(prev => prev ? { ...prev, spec_card: JSON.stringify(spec), state: 'reviewing' } : prev);
+        setShowSpecModal(true);
+      }
+      setIsGenerating(false);
+    },
+    onApprovalResolved: () => fetchSession()
+  });
+
+  const clarificationContext = (() => {
+    try {
+      if (!session?.clarification_context) return null;
+      return typeof session.clarification_context === 'string' 
+        ? JSON.parse(session.clarification_context) : session.clarification_context;
+    } catch { return null; }
+  })();
+
+  const progress = session?.progress_percent || clarificationContext?.overallProgress || 0;
+  
+  const parsedSpec = (() => {
+    try { return session?.spec_card ? JSON.parse(session.spec_card) : null; }
+    catch { return null; }
+  })();
+
+  const fetchSession = useCallback(async () => {
+    try {
+      const data = await getSession(sessionId);
+      setSession(data.session);
+      setMessages(data.messages || []);
+    } catch (err) {
+      setLocalError(err.message);
+    }
+  }, [sessionId, getSession]);
+
+  useEffect(() => { fetchSession(); }, [fetchSession]);
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isTyping]);
+  useEffect(() => {
+    // Focus input whenever chat is active (expanded states)
+    if (canChat) inputRef.current?.focus();
+  }, [session?.state]);
+
+
+  // Determine what chat actions are allowed
+  // Users can ALWAYS continue chatting - even in ready_for_docs or reviewing states
+  // This allows them to ask questions or request changes naturally
+  const canChat = ['input', 'clarifying', 'ready_for_docs', 'reviewing'].includes(session?.state) && !loading && !isTyping;
+  const canGenerateSpec = ['clarifying', 'ready_for_docs'].includes(session?.state) && !isGenerating;
+
+  // Send message - handles both clarifying chat AND revision requests
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!inputValue.trim() || loading || isTyping) return;
+
+    const messageText = inputValue.trim();
+    setInputValue('');
+    setLocalError(null);
+
+    const tempId = 'temp-' + Date.now();
+    setMessages(prev => [...prev, {
+      id: tempId, role: 'user', content: messageText, created_at: new Date().toISOString()
+    }]);
+    setIsTyping(true);
+
+    try {
+      // If we're in reviewing state, this becomes a revision request
+      if (session?.state === 'reviewing') {
+        const apiResponse = await requestRevision(sessionId, messageText);
+        const result = apiResponse.result || apiResponse;
+        
+        // Backend should return suggestions or transition state
+        // Update state back to clarifying so user can continue chatting
+        setSession(prev => prev ? { ...prev, state: 'clarifying' } : prev);
+        
+        if (result.message && typeof result.message === 'string') {
+          setMessages(prev => {
+            const filtered = prev.filter(m => m.id !== tempId);
+            return [...filtered, 
+              { id: 'user-' + Date.now(), role: 'user', content: messageText, created_at: new Date().toISOString() },
+              { id: 'ai-' + Date.now(), role: 'assistant', content: result.message, created_at: new Date().toISOString() }
+            ];
+          });
+        }
+      } else {
+        // Normal clarification flow
+        const apiResponse = await respond(sessionId, messageText);
+        const result = apiResponse.result || apiResponse;
+        
+        if (result.progress !== undefined) {
+          setSession(prev => prev ? { ...prev, progress_percent: result.progress } : prev);
+        }
+        if (result.readyForSpec) {
+          setSession(prev => prev ? { ...prev, state: 'ready_for_docs' } : prev);
+        }
+        
+        if (result.message && typeof result.message === 'string') {
+          setMessages(prev => {
+            const filtered = prev.filter(m => m.id !== tempId);
+            return [...filtered, 
+              { id: 'user-' + Date.now(), role: 'user', content: messageText, created_at: new Date().toISOString() },
+              { id: 'ai-' + Date.now(), role: 'assistant', content: result.message, created_at: new Date().toISOString() }
+            ];
+          });
+        }
+      }
+    } catch (err) {
+      setLocalError(err.message);
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  // Generate spec
+  const handleGenerateSpec = async () => {
+    setLocalError(null);
+    setIsGenerating(true);
+    setIsTyping(true);
+    try {
+      const apiResponse = await generateSpec(sessionId);
+      const result = apiResponse.result || apiResponse;
+      
+      if (result.spec) {
+        setSession(prev => prev ? { ...prev, spec_card: JSON.stringify(result.spec), state: 'reviewing' } : prev);
+        setShowSpecModal(true);
+      } else {
+        await fetchSession();
+      }
+    } catch (err) {
+      setLocalError(err.message);
+    } finally {
+      setIsGenerating(false);
+      setIsTyping(false);
+    }
+  };
+
+  // Approve spec
+  const handleApprove = async () => {
+    setLocalError(null);
+    setShowSpecModal(false);
+    try {
+      await approveSpec(sessionId);
+      setShowRepoModal(true);
+      await fetchSession();
+    } catch (err) {
+      setLocalError(err.message);
+    }
+  };
+
+  // Request revision from modal - close modal, go back to chat
+  const handleRequestRevisionFromModal = () => {
+    setShowSpecModal(false);
+    // Set state back to clarifying so user can continue chatting
+    setSession(prev => prev ? { ...prev, state: 'clarifying' } : prev);
+    // Focus chat input and give helpful hint
+    inputRef.current?.focus();
+    // No error - just a helpful message in placeholder
+  };
+
+  const stateConfig = STATE_CONFIG[session?.state] || STATE_CONFIG.input;
+  const gathered = clarificationContext?.gathered || {};
+
+
+  if (!session) {
+    return (
+      <div className="page-container">
+        <Sidebar />
+        <main className="page-main ds-loading">
+          <Loader2 size={32} className="spin" />
+        </main>
+      </div>
+    );
+  }
+
+  // Get placeholder text based on state
+  const getPlaceholder = () => {
+    switch (session.state) {
+      case 'input': return 'Describe your project...';
+      case 'reviewing': return 'Describe what changes you want...';
+      case 'ready_for_docs': return 'Ask a question or continue chatting...';
+      default: return 'Reply to continue...';
+    }
+  };
+
+  return (
+    <div className="page-container">
+      <Sidebar />
+      <main className="page-main">
+        {/* Header */}
+        <header className="page-header">
+          <div>
+            <h1>{session.project_name || 'Design Session'}</h1>
+            <p className="page-subtitle">
+              <span className="ds-state-badge" style={{ '--state-color': stateConfig.color }}>
+                {stateConfig.label}
+              </span>
+              {isConnected && <span className="ds-connected">● Connected</span>}
+            </p>
+          </div>
+        </header>
+
+        {/* Progress */}
+        <div className="ds-progress-wrap">
+          <div className="ds-progress-header">
+            <span>Progress</span>
+            <span className="ds-progress-value">{Math.round(progress)}%</span>
+          </div>
+          <div className="ds-progress-bar">
+            <div className="ds-progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+
+        {/* Error */}
+        {(localError || error) && (
+          <div className="ds-error">{localError || error}</div>
+        )}
+
+        {/* Main Grid */}
+        <div className="ds-grid">
+          {/* Chat Panel */}
+          <div className="card ds-chat-panel">
+            <div className="card-header">
+              <h2 className="card-title"><MessageSquare size={18} /> Design Chat</h2>
+            </div>
+            
+            <div className="ds-messages">
+              {messages.length === 0 ? (
+                <div className="ds-empty">
+                  <MessageSquare size={48} />
+                  <p>Describe your project to get started</p>
+                </div>
+              ) : (
+                messages.map(msg => <ChatMessage key={msg.id} message={msg} />)
+              )}
+              {isTyping && <TypingIndicator />}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Chat input - always visible when canChat is true */}
+            {canChat && (
+              <form onSubmit={handleSendMessage} className="ds-input-form">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder={getPlaceholder()}
+                  className="form-input"
+                />
+                <button type="submit" className="btn-primary" disabled={!inputValue.trim() || loading}>
+                  <Send size={18} />
+                </button>
+              </form>
+            )}
+          </div>
+
+
+          {/* Sidebar */}
+          <div className="ds-sidebar">
+            {/* Gathered Info */}
+            <div className="card">
+              <div className="card-header">
+                <h3 className="card-title"><Target size={16} /> Gathered Info</h3>
+              </div>
+              <div className="ds-gathered-list">
+                {['overview', 'users', 'features', 'technical', 'constraints'].map(key => (
+                  <div key={key} className="ds-gathered-item">
+                    <span>{key}</span>
+                    <div className="ds-mini-progress">
+                      <div 
+                        className="ds-mini-fill" 
+                        style={{ 
+                          width: `${gathered[key]?.score || 0}%`,
+                          background: (gathered[key]?.score || 0) >= 80 ? '#22c55e' : 
+                                      (gathered[key]?.score || 0) >= 50 ? '#f59e0b' : '#00d4ff'
+                        }} 
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="card">
+              <div className="card-header">
+                <h3 className="card-title"><Workflow size={16} /> Actions</h3>
+              </div>
+              <div className="ds-actions">
+                {/* Generate Spec */}
+                {canGenerateSpec && (
+                  <button onClick={handleGenerateSpec} disabled={isGenerating} className="btn-primary ds-action-btn">
+                    {isGenerating ? <><Loader2 size={16} className="spin" /> Generating...</> : <><FileText size={16} /> Generate Spec</>}
+                  </button>
+                )}
+
+                {/* View Spec - shown when spec exists */}
+                {parsedSpec && (
+                  <button onClick={() => setShowSpecModal(true)} className="btn-secondary ds-action-btn">
+                    <Eye size={16} /> View Spec
+                  </button>
+                )}
+
+                {/* Review state actions */}
+                {session.state === 'reviewing' && (
+                  <button onClick={handleApprove} className="btn-success ds-action-btn">
+                    <CheckCircle2 size={16} /> Approve Spec
+                  </button>
+                )}
+
+                {/* Approved - start build */}
+                {session.state === 'approved' && (
+                  <button onClick={() => navigate(`/build/${sessionId}`)} className="btn-primary ds-action-btn">
+                    <Ticket size={16} /> Start Build
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Spec Preview Card */}
+            {parsedSpec && (
+              <div className="card ds-spec-card" onClick={() => setShowSpecModal(true)}>
+                <div className="card-header">
+                  <h3 className="card-title"><FileText size={16} /> Spec Ready</h3>
+                </div>
+                <div className="ds-spec-preview">
+                  <strong>{parsedSpec.title}</strong>
+                  <p>{parsedSpec.summary?.slice(0, 100)}...</p>
+                  <span className="ds-spec-click-hint">Click to view full spec →</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
+
+      {/* Spec Modal */}
+      {showSpecModal && parsedSpec && (
+        <SpecModal
+          spec={parsedSpec}
+          state={session.state}
+          onClose={() => setShowSpecModal(false)}
+          onApprove={handleApprove}
+          onRequestRevision={handleRequestRevisionFromModal}
+        />
+      )}
+
+      {/* Repo Setup Modal */}
+      {showRepoModal && (
+        <RepoSetupModal
+          sessionId={sessionId}
+          projectName={session?.project_name}
+          onCancel={() => setShowRepoModal(false)}
+          onSuccess={() => { setShowRepoModal(false); navigate(`/build/${sessionId}`); }}
+        />
+      )}
+    </div>
+  );
+}

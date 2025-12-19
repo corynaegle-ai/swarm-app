@@ -106,6 +106,7 @@ app.use('/api/repo', apiLimiter, repoRoutes);
 app.use('/api/agents', apiLimiter, agentsRoutes);
 app.use('/api/learning', apiLimiter, learningRoutes);
 app.use('/api/mcp', apiLimiter, mcpRoutes);
+app.use('/api/registry', apiLimiter, registryRoutes);
 
 app.use("/api/internal", internalRoutes);
 // Legacy ticket routes (agent endpoints)

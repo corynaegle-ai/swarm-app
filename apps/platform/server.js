@@ -79,6 +79,7 @@ const agentsRoutes = require('./routes/agents');
 const learningRoutes = require('./routes/learning');
 const mcpRoutes = require('./routes/mcp');
 const internalRoutes = require('./routes/internal');
+const registryRoutes = require('./routes/agents-registry');
 
 // Dev API rate limiter - more generous for development work
 const devLimiter = rateLimit({

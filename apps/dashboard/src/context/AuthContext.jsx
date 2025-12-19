@@ -67,13 +67,19 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
+    const token = localStorage.getItem('swarm_token');
     try {
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       await fetch(`${API_URL}/api/auth/logout`, {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
+        headers
       });
-    } catch (err) {
-      console.error('Logout error:', err);
+    } catch {
+      // Logout endpoint may fail, but we still clear local state
     } finally {
       setUser(null);
       localStorage.removeItem('swarm_token');

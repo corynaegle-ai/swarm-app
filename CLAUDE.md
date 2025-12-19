@@ -6,27 +6,45 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 Swarm is a distributed AI agent coordination system using Firecracker microVMs to run Claude-powered coding agents in parallel. The monorepo contains the core platform services.
 
+## ⚠️ CRITICAL: Path Handling Rules
+
+**Project root**: This file (CLAUDE.md) is at the project root.
+
+When working in this repository:
+1. **ALWAYS verify your working directory first** with `pwd`
+2. **The `.auto-claude/` folder exists ONLY at the project root** - never create nested `.auto-claude/` folders
+3. **Use `./` prefix for relative paths** from project root
+4. **Before writing to `.auto-claude/specs/`**, verify the path doesn't already contain `.auto-claude`
+
+```bash
+# CORRECT: Writing from project root
+./apps/platform/server.js
+./.auto-claude/specs/001-my-task/spec.md
+
+# WRONG: Never create nested paths like this
+./.auto-claude/specs/001-task/.auto-claude/specs/001-task/spec.md
+```
+
 ## Repository Structure
 
 ```
-swarm/
+swarm/                    <- PROJECT ROOT (this CLAUDE.md lives here)
+├── .auto-claude/         <- Auto-Claude data (ONLY ONE, at root)
+│   └── specs/            <- Spec folders go here
 ├── apps/
-│   ├── platform/      # Express.js API server (port 8080)
-│   └── dashboard/     # React SPA (port 3000)
-├── packages/          # Shared libraries (future)
-├── scripts/           # Dev scripts and automation
-└── docs/              # Documentation and prompts
+│   ├── platform/         # Express.js API server (port 8080)
+│   └── dashboard/        # React SPA (port 3000)
+├── packages/             # Shared libraries (future)
+├── scripts/              # Dev scripts and automation
+└── docs/                 # Documentation and prompts
 ```
 
 ## Commands
 
 ### Platform (apps/platform)
 ```bash
-# Development (requires SSH tunnel to DEV DB)
-pnpm dev              # Start with nodemon
-
-# Production
-pnpm start            # Start server.js
+pnpm dev              # Development with nodemon
+pnpm start            # Production
 ```
 
 ### Dashboard (apps/dashboard)
@@ -37,7 +55,7 @@ pnpm build            # Production build
 
 ### Local Development Setup
 ```bash
-# Terminal 1: Start SSH tunnel to DEV PostgreSQL
+# Terminal 1: SSH tunnel to DEV PostgreSQL
 ./scripts/tunnel-dev-db.sh
 
 # Terminal 2: Start platform

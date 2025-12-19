@@ -1,0 +1,102 @@
+{
+  "task_description": "Fix dashboard session persistence by implementing localStorage-based token persistence for JWT authentication",
+  "scoped_services": [
+    {
+      "name": "dashboard",
+      "role": "Primary - Implement token persistence and restore auth state from localStorage on page refresh",
+      "type": "frontend"
+    },
+    {
+      "name": "platform",
+      "role": "Reference only - Existing JWT auth endpoints (/auth/me, /auth/refresh) used for token validation",
+      "type": "backend"
+    }
+  ],
+  "files_to_modify": {
+    "dashboard": [
+      {
+        "path": "apps/dashboard/src/context/AuthContext.jsx",
+        "reason": "Update checkAuth to read token from localStorage and use Bearer authentication instead of cookies",
+        "current_state": "Already stores token to localStorage (lines 22, 54) but never reads it back on initialization. Uses cookie-based auth (credentials: 'include') which doesn't persist properly"
+      },
+      {
+        "path": "apps/dashboard/src/services/registryApi.js",
+        "reason": "Update API calls to attach Bearer token from localStorage to Authorization header",
+        "current_state": "Uses credentials: 'include' (cookie-based auth). Need to add Authorization: Bearer <token> header"
+      },
+      {
+        "path": "apps/dashboard/src/services/mcpApi.js",
+        "reason": "Update API calls to attach Bearer token from localStorage to Authorization header",
+        "current_state": "Uses credentials: 'include' (cookie-based auth). Need to add Authorization: Bearer <token> header"
+      },
+      {
+        "path": "apps/dashboard/src/hooks/useAgents.js",
+        "reason": "Update API calls to attach Bearer token from localStorage to Authorization header",
+        "current_state": "Uses credentials: 'include' (cookie-based auth). Need to add Authorization: Bearer <token> header"
+      }
+    ]
+  },
+  "files_to_reference": [
+    {
+      "path": "apps/platform/routes/auth.js",
+      "pattern": "Backend auth endpoint contracts - /auth/login returns token (line 70), /auth/me validates token (line 132), /auth/refresh renews token (line 125)",
+      "relevance": "Understand token format and validation endpoints"
+    },
+    {
+      "path": "apps/platform/middleware/auth.js",
+      "pattern": "Backend JWT token verification - requireAuth middleware extracts and validates Bearer tokens",
+      "relevance": "Understand how backend expects Authorization headers"
+    },
+    {
+      "path": "apps/dashboard/src/components/ProtectedRoute.jsx",
+      "pattern": "Current protected route pattern - shows loading state during auth check (lines 8-15)",
+      "relevance": "Loading state pattern to prevent login screen flash"
+    }
+  ],
+  "patterns": {
+    "token_storage": "localStorage.setItem('swarm_token', token) - already implemented in AuthContext (lines 22, 54)",
+    "api_pattern": "All API calls currently use fetch() with credentials: 'include' for cookie auth. Need to switch to Authorization: Bearer <token> headers",
+    "auth_check": "checkAuth() runs on AuthContext mount (line 11) but uses cookies, not localStorage token",
+    "loading_state": "ProtectedRoute shows spinner during auth loading (lines 8-15) - maintain this UX pattern"
+  },
+  "existing_implementations": {
+    "description": "JWT auth is fully implemented with token generation, cookie storage, and validation. Frontend already stores token to localStorage but doesn't use it.",
+    "relevant_files": [
+      "apps/dashboard/src/context/AuthContext.jsx",
+      "apps/platform/routes/auth.js",
+      "apps/platform/middleware/auth.js"
+    ],
+    "discovered_issues": [
+      {
+        "issue": "Hybrid auth approach broken",
+        "details": "Backend returns both cookie AND token. Frontend saves token to localStorage (for WebSocket auth per comment line 52) but relies on cookies for HTTP requests. Cookies don't persist properly across refreshes.",
+        "location": "apps/dashboard/src/context/AuthContext.jsx lines 16-23, 36-58"
+      },
+      {
+        "issue": "Token never read back on initialization",
+        "details": "checkAuth() on mount (line 14) calls /auth/me with credentials: 'include' (cookies only), never checks localStorage for stored token",
+        "location": "apps/dashboard/src/context/AuthContext.jsx lines 14-34"
+      },
+      {
+        "issue": "Inconsistent API auth patterns",
+        "details": "All API services (registryApi.js, mcpApi.js, hooks) use credentials: 'include' - need centralized token attachment utility",
+        "location": "apps/dashboard/src/services/ and apps/dashboard/src/hooks/"
+      }
+    ]
+  },
+  "technical_constraints": {
+    "must_maintain": [
+      "Existing cookie-based auth as fallback",
+      "WebSocket authentication using localStorage token",
+      "Loading state during auth validation",
+      "Protected route redirect behavior"
+    ],
+    "security_considerations": [
+      "XSS vulnerability from localStorage storage (accepted tradeoff per spec)",
+      "Token expiration handling via /auth/refresh endpoint",
+      "Proper token cleanup on explicit logout only",
+      "Backend validation of all stored tokens (never trust client)"
+    ]
+  },
+  "created_at": "2025-12-19T16:20:00.000000"
+}

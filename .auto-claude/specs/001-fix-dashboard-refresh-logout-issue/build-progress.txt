@@ -1,0 +1,125 @@
+=== AUTO-BUILD PROGRESS ===
+
+Project: Dashboard Session Persistence on Page Refresh
+Spec: 001-fix-dashboard-refresh-logout-issue
+Workspace: Managed by orchestrator
+Started: 2025-12-19 16:20 UTC
+
+Workflow Type: feature
+Rationale: Adding session persistence capability to existing JWT authentication system by leveraging localStorage. This is a feature enhancement that introduces token restoration logic (checkAuth reads from localStorage, attaches Bearer tokens) rather than fixing a broken implementation.
+
+=== SESSION 1: PLANNER AGENT ===
+
+✓ Deep codebase investigation completed
+✓ Created/updated context files (context.json, project_index.json exists)
+✓ Created implementation_plan.json with 4 phases, 11 subtasks
+✓ Created init.sh startup script
+✓ Created build-progress.txt
+
+Investigation Summary:
+- Identified hybrid auth approach (cookies + localStorage token storage)
+- Root cause: Frontend stores token to localStorage but never reads it back
+- Backend already supports Bearer tokens (middleware/auth.js line 51)
+- Solution: Update AuthContext to read localStorage token and attach to API calls
+
+Phase Summary:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 1: Auth Context Token Restoration
+  - 2 subtasks
+  - Dependencies: None
+  - CRITICAL: Update checkAuth() to use localStorage token with Bearer auth
+  - Verify logout clears token properly
+
+Phase 2: Centralized API Client with Token Management
+  - 1 subtask
+  - Dependencies: Phase 1
+  - Create apps/dashboard/src/utils/api.js utility
+  - Attach Authorization Bearer header to all requests
+
+Phase 3: Migrate Existing API Calls to Use Token Utility
+  - 3 subtasks
+  - Dependencies: Phase 2
+  - Update registryApi.js, mcpApi.js, useAgents.js hooks
+  - Replace credentials: 'include' with centralized token utility
+
+Phase 4: End-to-End Integration Testing
+  - 4 subtasks (E2E test scenarios)
+  - Dependencies: Phase 3
+  - Login → Refresh persistence test
+  - Invalid token handling test
+  - Explicit logout test
+  - Loading state verification (no UI flash)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Services Involved:
+- dashboard (React/Vite, port 3000) - PRIMARY
+  Role: Implement token persistence, restore auth state on page refresh
+
+- platform (Express, port 8080) - REFERENCE ONLY
+  Role: Provides JWT auth endpoints (/auth/me, /auth/refresh, /auth/logout)
+
+Files to Modify:
+[dashboard]
+- apps/dashboard/src/context/AuthContext.jsx (CRITICAL)
+- apps/dashboard/src/services/registryApi.js
+- apps/dashboard/src/services/mcpApi.js
+- apps/dashboard/src/hooks/useAgents.js
+
+Files to Create:
+- apps/dashboard/src/utils/api.js (NEW - centralized API utility)
+
+Patterns to Follow:
+- Token storage: localStorage.setItem('swarm_token', token)
+- Token retrieval: localStorage.getItem('swarm_token')
+- Authorization header: Authorization: Bearer ${token}
+- Backend middleware: Supports both cookies AND Bearer tokens (auth.js:51)
+
+Parallelism Analysis:
+- Max parallel phases: 1 (sequential dependencies)
+- Recommended workers: 1
+- Speedup estimate: N/A - phases must run sequentially
+- Reasoning: Phase 1 → Phase 2 → Phase 3 → Phase 4 (strict dependency chain)
+
+Verification Strategy:
+- Risk Level: HIGH (authentication changes are security-critical)
+- Test Types Required: unit, integration, e2e
+- Security Scanning: REQUIRED (token handling, XSS vulnerability check)
+- Staging Deployment: NOT REQUIRED
+
+Critical Acceptance Criteria:
+✓ Login stores JWT token in localStorage
+✓ Page refresh maintains authentication state without re-login
+✓ Invalid/expired tokens detected and cleared
+✓ Explicit logout clears token and redirects to signin
+✓ All API requests include Authorization Bearer header
+✓ No console errors during auth state restoration
+✓ Loading state prevents UI flash during token validation
+✓ Protected routes remain inaccessible without valid token
+
+Security Considerations:
+- XSS vulnerability from localStorage (accepted tradeoff per spec)
+- Token expiration handling via /auth/refresh endpoint
+- Proper token cleanup on explicit logout only
+- Backend validation of all stored tokens (never trust client)
+
+Edge Cases to Handle:
+1. Expired token in localStorage on refresh → validate, clear if invalid
+2. Invalid token format → catch parse errors, clear localStorage
+3. Network failure during validation → handle gracefully
+4. Concurrent tab logout → consider storage event listener
+
+=== STARTUP COMMAND ===
+
+To continue building this spec, run:
+
+  source auto-claude/.venv/bin/activate && python auto-claude/run.py --spec 001 --parallel 1
+
+Or manually start services:
+
+  cd .auto-claude/specs/001-fix-dashboard-refresh-logout-issue
+  ./init.sh
+
+=== END SESSION 1 ===
+
+Next Session: CODER AGENT will implement subtask-1-1
+Status: Ready for implementation

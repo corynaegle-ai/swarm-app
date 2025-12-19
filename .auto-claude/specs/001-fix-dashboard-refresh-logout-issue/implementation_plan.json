@@ -1,0 +1,418 @@
+{
+  "feature": "Dashboard Session Persistence on Page Refresh",
+  "workflow_type": "feature",
+  "workflow_rationale": "Adding session persistence capability to existing JWT authentication system by leveraging localStorage. This is a feature enhancement that introduces token restoration logic rather than fixing a broken implementation. Affects 1 primary service (dashboard frontend) with reference-only interaction with backend auth endpoints.",
+
+  "phases": [
+    {
+      "id": "phase-1-auth-context",
+      "name": "Auth Context Token Restoration",
+      "type": "implementation",
+      "description": "Update AuthContext to read and validate token from localStorage on app initialization, switching from cookie-only auth to Bearer token auth",
+      "depends_on": [],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-1-1",
+          "description": "Update checkAuth to use localStorage token with Bearer auth",
+          "service": "dashboard",
+          "files_to_modify": ["apps/dashboard/src/context/AuthContext.jsx"],
+          "files_to_create": [],
+          "patterns_from": ["apps/platform/middleware/auth.js"],
+          "implementation_notes": [
+            "Read token from localStorage.getItem('swarm_token') at start of checkAuth()",
+            "If no token, set loading=false and return (unauthenticated state)",
+            "If token exists, call /auth/me with Authorization: Bearer {token} header",
+            "On 200 response: set user state from response",
+            "On 401/403: clear localStorage token and set unauthenticated state",
+            "On network error: clear token and set unauthenticated state",
+            "Keep existing cookie fallback by maintaining credentials: 'include'"
+          ],
+          "verification": {
+            "type": "manual",
+            "instructions": [
+              "1. Login via dashboard and verify token saved to localStorage",
+              "2. Check browser DevTools > Application > Local Storage for 'swarm_token' key",
+              "3. Refresh the page",
+              "4. Verify user remains logged in (no redirect to /signin)",
+              "5. Check Network tab: /auth/me request has 'Authorization: Bearer ...' header",
+              "6. Clear localStorage manually and refresh - should redirect to signin"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-1-2",
+          "description": "Ensure logout properly clears token from localStorage",
+          "service": "dashboard",
+          "files_to_modify": ["apps/dashboard/src/context/AuthContext.jsx"],
+          "files_to_create": [],
+          "patterns_from": [],
+          "implementation_notes": [
+            "Verify logout() function clears localStorage.removeItem('swarm_token')",
+            "Existing code already does this (line 71) - verify it works correctly",
+            "Ensure logout calls backend /auth/logout endpoint",
+            "Set user state to null after clearing token"
+          ],
+          "verification": {
+            "type": "manual",
+            "instructions": [
+              "1. Login to dashboard",
+              "2. Verify localStorage has 'swarm_token'",
+              "3. Click logout button/menu",
+              "4. Verify localStorage 'swarm_token' is removed",
+              "5. Verify redirect to /signin page",
+              "6. Refresh page - should stay on signin (not auto-login)"
+            ]
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-2-api-utility",
+      "name": "Centralized API Client with Token Management",
+      "type": "implementation",
+      "description": "Create reusable API utility that attaches Bearer tokens from localStorage to all authenticated requests and handles 401 responses globally",
+      "depends_on": ["phase-1-auth-context"],
+      "parallel_safe": true,
+      "subtasks": [
+        {
+          "id": "subtask-2-1",
+          "description": "Create api.js utility with token-aware fetch wrapper",
+          "service": "dashboard",
+          "files_to_modify": [],
+          "files_to_create": ["apps/dashboard/src/utils/api.js"],
+          "patterns_from": ["apps/dashboard/src/services/registryApi.js"],
+          "implementation_notes": [
+            "Export apiCall(endpoint, options) function",
+            "Read token from localStorage.getItem('swarm_token')",
+            "Build headers: { 'Content-Type': 'application/json', ...conditionally add Authorization: Bearer <token> if token exists }",
+            "Call fetch() with merged options",
+            "On 401 response: clear localStorage token, redirect to /signin",
+            "On 403: optionally handle authorization errors",
+            "Return response object for caller to handle",
+            "Add optional credentials: 'include' for cookie fallback"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "cd apps/dashboard && grep -q 'export.*apiCall' src/utils/api.js && echo 'API utility created'",
+            "expected": "API utility created"
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-3-migrate-api-calls",
+      "name": "Migrate Existing API Calls to Use Token Utility",
+      "type": "implementation",
+      "description": "Update existing API service files and hooks to use the centralized API utility instead of direct fetch with credentials: 'include'",
+      "depends_on": ["phase-2-api-utility"],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-3-1",
+          "description": "Update registryApi.js to use apiCall utility",
+          "service": "dashboard",
+          "files_to_modify": ["apps/dashboard/src/services/registryApi.js"],
+          "files_to_create": [],
+          "patterns_from": ["apps/dashboard/src/utils/api.js"],
+          "implementation_notes": [
+            "Import apiCall from '../utils/api.js'",
+            "Replace all fetch() calls with apiCall()",
+            "Remove credentials: 'include' (handled by utility)",
+            "Remove duplicate Authorization header logic if exists",
+            "Keep error handling and response parsing logic"
+          ],
+          "verification": {
+            "type": "manual",
+            "instructions": [
+              "1. Login to dashboard",
+              "2. Navigate to /agents/catalog page",
+              "3. Check Network tab: verify agent API calls have Authorization header",
+              "4. Verify page loads successfully without errors",
+              "5. Check console for any auth-related errors"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-3-2",
+          "description": "Update mcpApi.js to use apiCall utility",
+          "service": "dashboard",
+          "files_to_modify": ["apps/dashboard/src/services/mcpApi.js"],
+          "files_to_create": [],
+          "patterns_from": ["apps/dashboard/src/utils/api.js"],
+          "implementation_notes": [
+            "Import apiCall from '../utils/api.js'",
+            "Replace fetch() calls with apiCall()",
+            "Maintain existing error handling"
+          ],
+          "verification": {
+            "type": "command",
+            "command": "cd apps/dashboard && grep -q \"import.*apiCall.*from.*utils/api\" src/services/mcpApi.js && echo 'mcpApi migrated'",
+            "expected": "mcpApi migrated"
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-3-3",
+          "description": "Update useAgents hook to use apiCall utility",
+          "service": "dashboard",
+          "files_to_modify": ["apps/dashboard/src/hooks/useAgents.js"],
+          "files_to_create": [],
+          "patterns_from": ["apps/dashboard/src/utils/api.js"],
+          "implementation_notes": [
+            "Import apiCall from '../utils/api.js'",
+            "Replace fetch() calls with apiCall()",
+            "Maintain existing hooks pattern and error state management"
+          ],
+          "verification": {
+            "type": "manual",
+            "instructions": [
+              "1. Login to dashboard",
+              "2. Navigate to /agents page (Agent Monitor)",
+              "3. Verify agents list loads correctly",
+              "4. Check Network tab: /api/agents requests have Authorization header",
+              "5. Test agent termination if available - verify action succeeds"
+            ]
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    {
+      "id": "phase-4-integration",
+      "name": "End-to-End Integration Testing",
+      "type": "integration",
+      "description": "Comprehensive testing of login persistence, token validation, logout, and edge cases across the full authentication flow",
+      "depends_on": ["phase-3-migrate-api-calls"],
+      "parallel_safe": false,
+      "subtasks": [
+        {
+          "id": "subtask-4-1",
+          "description": "E2E test: Login → Refresh → Verify Session Persists",
+          "all_services": true,
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "e2e",
+            "steps": [
+              "1. Clear all localStorage and cookies",
+              "2. Navigate to http://localhost:3000/signin",
+              "3. Enter valid credentials and submit",
+              "4. Verify redirect to /dashboard",
+              "5. Check localStorage for 'swarm_token' key",
+              "6. Hard refresh browser (Cmd+Shift+R / Ctrl+Shift+R)",
+              "7. EXPECTED: User remains on /dashboard, logged in",
+              "8. Verify no redirect to /signin",
+              "9. Check Network tab: /auth/me called with Authorization header on page load"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-4-2",
+          "description": "E2E test: Expired/Invalid Token Handling",
+          "all_services": true,
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "e2e",
+            "steps": [
+              "1. Login successfully",
+              "2. Manually edit localStorage 'swarm_token' value to 'invalid_token_string'",
+              "3. Refresh the page",
+              "4. EXPECTED: Token validation fails (401), token cleared, redirect to /signin",
+              "5. Verify localStorage no longer has 'swarm_token'",
+              "6. Verify error handling doesn't show flash of dashboard before redirect"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-4-3",
+          "description": "E2E test: Explicit Logout Clears Token",
+          "all_services": true,
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "e2e",
+            "steps": [
+              "1. Login successfully",
+              "2. Navigate to dashboard",
+              "3. Click logout button (UserMenu component)",
+              "4. Verify redirect to /signin",
+              "5. Check localStorage - 'swarm_token' should be removed",
+              "6. Refresh page - should stay on /signin (not auto-login)",
+              "7. Navigate back to /dashboard - should redirect to /signin (protected route)"
+            ]
+          },
+          "status": "pending"
+        },
+        {
+          "id": "subtask-4-4",
+          "description": "Loading state verification (no login flash)",
+          "all_services": true,
+          "files_to_modify": [],
+          "files_to_create": [],
+          "patterns_from": [],
+          "verification": {
+            "type": "manual",
+            "instructions": [
+              "1. Login successfully",
+              "2. Refresh page and watch carefully",
+              "3. EXPECTED: Loading spinner shows briefly, then dashboard appears",
+              "4. SHOULD NOT SEE: Flash of login page before dashboard loads",
+              "5. Test on slow network (DevTools throttling to Slow 3G)",
+              "6. Verify loading state persists until token validation completes"
+            ]
+          },
+          "status": "pending"
+        }
+      ]
+    }
+  ],
+
+  "summary": {
+    "total_phases": 4,
+    "total_subtasks": 11,
+    "services_involved": ["dashboard"],
+    "estimated_time": "2-3 hours",
+    "parallelism": {
+      "max_parallel_phases": 1,
+      "parallel_groups": [],
+      "recommended_workers": 1,
+      "speedup_estimate": "N/A - sequential phases due to dependencies",
+      "reasoning": "Phase 1 must complete before Phase 2 (API utility needs working auth). Phase 2 must complete before Phase 3 (services need utility). Phase 4 requires all changes for integration testing."
+    },
+    "startup_command": "source auto-claude/.venv/bin/activate && python auto-claude/run.py --spec 001 --parallel 1"
+  },
+
+  "verification_strategy": {
+    "risk_level": "high",
+    "skip_validation": false,
+    "test_creation_phase": "post_implementation",
+    "test_types_required": ["unit", "integration", "e2e"],
+    "security_scanning_required": true,
+    "staging_deployment_required": false,
+    "acceptance_criteria": [
+      "Login stores JWT token in localStorage",
+      "Page refresh maintains authentication state without re-login",
+      "Invalid/expired tokens are detected and cleared",
+      "Explicit logout clears token and redirects to signin",
+      "All API requests include Authorization Bearer header when token exists",
+      "No console errors during auth state restoration",
+      "Loading state prevents UI flash during token validation",
+      "Protected routes remain inaccessible without valid token",
+      "Security scan shows no critical vulnerabilities in token handling"
+    ],
+    "verification_steps": [
+      {
+        "name": "Unit Tests - Auth Context",
+        "command": "cd apps/dashboard && npm test -- AuthContext",
+        "expected_outcome": "All auth context tests pass",
+        "type": "test",
+        "required": false,
+        "blocking": false,
+        "notes": "Unit tests may not exist yet - if missing, create basic tests for token storage/retrieval"
+      },
+      {
+        "name": "Integration Test - Login Flow",
+        "command": "Manual testing per phase-4 subtasks",
+        "expected_outcome": "Login → Refresh maintains session",
+        "type": "test",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Security Scan - Secrets Detection",
+        "command": "cd apps/dashboard && grep -r \"swarm_token\" src/ | grep -v localStorage | head -5",
+        "expected_outcome": "Token only accessed via localStorage, not hardcoded",
+        "type": "security",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Browser Verification - localStorage",
+        "command": "Manual check in browser DevTools > Application > Local Storage",
+        "expected_outcome": "'swarm_token' key exists after login, removed after logout",
+        "type": "manual",
+        "required": true,
+        "blocking": true
+      },
+      {
+        "name": "Browser Verification - Network Headers",
+        "command": "Manual check in browser DevTools > Network tab",
+        "expected_outcome": "API requests show 'Authorization: Bearer ...' header",
+        "type": "manual",
+        "required": true,
+        "blocking": true
+      }
+    ],
+    "reasoning": "Authentication changes are security-critical and directly affect user experience. High risk requires comprehensive E2E testing to verify login persistence, token validation, logout behavior, and protection against XSS token exposure. Security scanning ensures tokens are handled correctly."
+  },
+
+  "qa_acceptance": {
+    "unit_tests": {
+      "required": false,
+      "commands": [],
+      "minimum_coverage": null,
+      "notes": "Unit tests for auth context would be ideal but not blocking - manual E2E testing is sufficient for this feature"
+    },
+    "integration_tests": {
+      "required": true,
+      "commands": ["Manual testing per phase-4-integration subtasks"],
+      "services_to_test": ["dashboard"],
+      "notes": "Manual integration testing required - login flow, token persistence, logout flow"
+    },
+    "e2e_tests": {
+      "required": true,
+      "commands": ["Manual E2E per subtask-4-1, subtask-4-2, subtask-4-3"],
+      "flows": [
+        "login-refresh-persist",
+        "invalid-token-handling",
+        "explicit-logout",
+        "loading-state-no-flash"
+      ],
+      "notes": "Critical E2E flows must pass - these verify the core feature works correctly"
+    },
+    "browser_verification": {
+      "required": true,
+      "pages": [
+        {
+          "url": "http://localhost:3000/signin",
+          "checks": [
+            "After login, localStorage contains 'swarm_token'",
+            "Login redirects to /dashboard"
+          ]
+        },
+        {
+          "url": "http://localhost:3000/dashboard",
+          "checks": [
+            "Page refresh maintains login state",
+            "No redirect to /signin on refresh",
+            "Network requests have Authorization header",
+            "No console errors during page load"
+          ]
+        }
+      ],
+      "devtools_checks": [
+        "Application > Local Storage: 'swarm_token' exists after login",
+        "Network > Request Headers: 'Authorization: Bearer <token>' on API calls",
+        "Console: No authentication errors or token validation failures"
+      ]
+    },
+    "database_verification": {
+      "required": false,
+      "checks": [],
+      "notes": "JWT tokens are stateless - no database verification needed"
+    }
+  },
+
+  "qa_signoff": null
+}

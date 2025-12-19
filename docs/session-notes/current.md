@@ -1,100 +1,107 @@
 # Current Session Notes
 
-## Session: December 19, 2024 - Auto-Claude Installation
+## Session: December 19, 2024 - Monorepo Creation
 
-### Status: AUTO-CLAUDE INSTALLED ✅
-
----
-
-## Auto-Claude Installation Summary
-
-### Prerequisites ✅
-| Tool | Version |
-|------|---------|
-| Node.js | v25.2.1 |
-| Python | 3.14.0 |
-| Docker | 29.0.1 |
-| GitHub CLI | 2.83.2 |
-| Claude CLI | /opt/homebrew/bin/claude |
-| pnpm | 10.25.0 |
-
-### Installation Steps Completed ✅
-
-| Step | Status | Notes |
-|------|--------|-------|
-| 1. Fork Auto-Claude | ✅ | github.com/corynaegle-ai/Auto-Claude |
-| 2. Clone repo | ✅ | ~/Projects/Auto-Claude |
-| 3. Python backend | ✅ | .venv created, deps installed |
-| 4. Desktop UI | ✅ | pnpm install + build complete |
-| 5. FalkorDB Docker | ✅ | Running on port 6380 |
-| 6. Environment config | ⚠️ | .env created, needs API key |
-| 7. Add Swarm repos | 🔲 | Ready to configure in UI |
-
-### Swarm Repos Available Locally
-- `~/swarm-specs-local` - Specifications & docs
-- `~/Projects/swarm-platform` - Backend API
-- `~/Projects/swarm-dashboard` - Frontend UI
+### Status: MONOREPO CREATED ✅
 
 ---
 
-## Manual Steps Required
+## Monorepo Setup Complete
 
-### 1. Add Anthropic API Key
-```bash
-nano ~/Projects/Auto-Claude/auto-claude/.env
-# Uncomment and set: ANTHROPIC_API_KEY=sk-ant-...
+### New Repository
+- **GitHub**: https://github.com/corynaegle-ai/swarm-app
+- **Local**: `~/Projects/swarm`
+
+### Structure
+```
+swarm/
+├── apps/
+│   ├── platform/     # @swarm/platform - Backend API
+│   └── dashboard/    # @swarm/dashboard - Frontend UI
+├── docs/             # Specifications & documentation
+├── package.json      # pnpm workspace root
+├── pnpm-workspace.yaml
+└── README.md
 ```
 
-### 2. Configure Swarm Projects in Auto-Claude UI
-Open Auto-Claude desktop app, then:
-1. Click "Add Project"
-2. Add swarm-specs: `~/swarm-specs-local`
-3. Add swarm-platform: `~/Projects/swarm-platform`
-4. Add swarm-dashboard: `~/Projects/swarm-dashboard`
-
----
-
-## Quick Commands
-
-### Start Auto-Claude
+### Commands
 ```bash
-cd ~/Projects/Auto-Claude/auto-claude-ui && pnpm run start
-```
+cd ~/Projects/swarm
 
-### Start FalkorDB (if not running)
-```bash
-cd ~/Projects/Auto-Claude && docker-compose up -d falkordb
-```
+# Install all dependencies
+pnpm install
 
-### Check Docker Status
-```bash
-docker ps | grep falkordb
+# Development
+pnpm dev:platform    # Start backend
+pnpm dev:dashboard   # Start frontend
 ```
 
 ---
 
-## Previous Session: Ticket System Enhancement
+## Auto-Claude Configuration
 
-### Phase 1-3 Complete ✅
-- Backend API with WebSocket broadcasts
-- Frontend UI with real-time updates
-- Commit b9e1931 (platform), f436641 (dashboard)
+### Ready to Add Project
+Add the monorepo to Auto-Claude:
+- Path: `~/Projects/swarm`
+- This single project covers platform, dashboard, and docs
 
-### Phase 4: Production Deploy (pending)
-- Deploy to PROD: 146.190.35.235
+### API Key Configured ✅
+`ANTHROPIC_API_KEY` set in `~/Projects/Auto-Claude/auto-claude/.env`
 
 ---
 
-## Droplet Access
+## Migration Notes
 
-### DEV
+### Old Repos (can be archived)
+| Repo | Status | Action |
+|------|--------|--------|
+| swarm-platform | Merged | Archive after testing |
+| swarm-dashboard | Merged | Archive after testing |
+| swarm-specs | Merged | Archive after testing |
+
+### Kept Separate
+| Repo | Reason |
+|------|--------|
+| swarm | Firecracker VM infrastructure scripts |
+
+---
+
+## Deployment Updates Required
+
+After validating the monorepo works with Auto-Claude:
+
+### DEV Droplet (134.199.235.140)
 ```bash
+# Replace separate repos with monorepo
+cd /opt
+git clone https://github.com/corynaegle-ai/swarm-app.git swarm-app
+cd swarm-app && pnpm install
+
+# Update PM2 configs to point to new paths
+# apps/platform → /opt/swarm-app/apps/platform
+# apps/dashboard → /opt/swarm-app/apps/dashboard
+```
+
+### PM2 Ecosystem Updates
+- `swarm-platform-dev` → `/opt/swarm-app/apps/platform/server.js`
+- `swarm-dashboard-dev` → `/opt/swarm-app/apps/dashboard` (static serve)
+
+---
+
+## Quick Reference
+
+### Droplet Access
+```bash
+# DEV
 ssh -i ~/.ssh/swarm_key root@134.199.235.140
 export PATH=/root/.nvm/versions/node/v22.21.1/bin:$PATH
-```
 
-### PROD
-```bash
+# PROD
 ssh -i ~/.ssh/swarm_key root@146.190.35.235
 export PATH=/root/.nvm/versions/node/v22.12.0/bin:$PATH
+```
+
+### Auto-Claude
+```bash
+cd ~/Projects/Auto-Claude/auto-claude-ui && pnpm run start
 ```

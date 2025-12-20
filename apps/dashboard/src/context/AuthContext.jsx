@@ -26,7 +26,7 @@ export function AuthProvider({ children }) {
 
       if (res.ok) {
         const data = await res.json();
-        setUser(data.user);
+        setUser(data.user || data);
         // If server returns token on /me, save it
         if (data.token) {
           localStorage.setItem('swarm_token', data.token);
@@ -56,7 +56,7 @@ export function AuthProvider({ children }) {
       throw new Error(data.error || 'Login failed');
     }
     
-    setUser(data.user);
+    setUser(data.user || data);
     
     // Save token to localStorage for WebSocket auth
     if (data.token) {

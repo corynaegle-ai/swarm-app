@@ -773,8 +773,8 @@ export default function Tickets() {
                 )}
 
                 <div className="detail-timestamps">
-                  <span>Created: {new Date(selectedTicket.created_at).toLocaleString()}</span>
-                  <span>Updated: {new Date(selectedTicket.updated_at).toLocaleString()}</span>
+                  <span><Clock size={14} /> Created: {new Date(selectedTicket.created_at).toLocaleString()}</span>
+                  <span><Clock size={14} /> Updated: {new Date(selectedTicket.updated_at).toLocaleString()}</span>
                 </div>
                 {/* Action Buttons */}
                 <div className="ticket-actions">
@@ -1501,6 +1501,11 @@ export default function Tickets() {
           border-top: 1px solid rgba(255,255,255,0.04);
           font-size: 0.8rem;
           color: #555;
+        }
+        .detail-timestamps span {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
         }
 
         /* Active nav state */

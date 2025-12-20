@@ -233,12 +233,78 @@ await execute(`
 
 ## Next Steps
 
-1. **subtask-2-1:** Verify Engine is running and polling
+1. **subtask-2-1:** Verify Engine is running and polling ✅ **COMPLETED**
 2. **subtask-2-2:** Trace engine dispatcher flow
 3. **subtask-2-3:** Confirm forge-agent processTicket() is never called (because tickets are never found)
 4. **subtask-2-4:** Confirm sentinel assignment logic is missing
 5. **subtask-2-5:** Document complete root cause and fix strategy
 6. **subtask-3-1:** Implement the fix (add assignee_id on activation)
+
+---
+
+## Subtask 2-1: Engine Status Verification
+
+**Date:** 2025-12-20
+**Status:** Completed
+
+### Verification Method
+```bash
+ps aux | grep 'engine-pg.js'
+ps aux | grep -E 'node.*engine|swarm.*engine' | grep -v grep
+cat /var/run/swarm-engine.pid
+```
+
+### Results
+
+**Engine is NOT running.**
+
+1. **Process check:** No `engine-pg.js` process found
+2. **PID file:** `/var/run/swarm-engine.pid` does not exist
+3. **No systemd service:** No `.service` files found in repository
+4. **PM2 config:** Only `docs/deploy-agent/ecosystem.config.js` exists (for deploy-agent, not engine)
+
+### Engine Location & Startup
+
+The engine code is located in `docs/engine-pg.js`. Key observations:
+
+1. **Auto-start on direct execution:** The engine auto-starts when run directly (lines 762-776):
+   ```javascript
+   const engine = new SwarmEngine({
+       maxVMs: 3,           // Conservative start
+       pollInterval: 5000   // 5 second polling
+   });
+   engine.start().catch(err => {
+       console.error('Engine failed to start:', err);
+       process.exit(1);
+   });
+   ```
+
+2. **Expected startup command:**
+   ```bash
+   node docs/engine-pg.js
+   ```
+
+3. **Required paths (production):**
+   - Registry DB: `/opt/swarm-registry/registry.db`
+   - PID file: `/var/run/swarm-engine.pid`
+   - Log dir: `/var/log/swarm`
+
+4. **Required environment:**
+   - `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`
+
+### Impact Assessment
+
+Even if the engine were running, it would not find any tickets because:
+1. **Primary issue:** `activateTicketsForBuild()` doesn't set `assignee_id`
+2. **Engine query filters:** `WHERE assignee_id IS NOT NULL` would return 0 rows
+
+However, **starting the engine is required** for the workflow to function after fixing the assignee issue.
+
+### Recommendation
+
+1. Create a startup script or PM2 config for the engine
+2. Or modify the platform service to embed/start the engine
+3. Fix the `assignee_id` issue first (primary root cause)
 
 ---
 

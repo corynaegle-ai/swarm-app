@@ -69,7 +69,16 @@ router.post('/claim', async (req, res) => {
     const ticket = await queryOne(sql, params);
     
     if (!ticket) return res.json({ ticket: null, message: 'No tickets available' });
-    
+
+    // Log state transition: ready → assigned
+    console.log('[state transition] /claim:', {
+      ticketId: ticket.id,
+      fromState: ticket.state,
+      toState: 'assigned',
+      agent_id,
+      timestamp: new Date().toISOString()
+    });
+
     // Extract project info before spreading ticket
     const project = {
       id: ticket.project_id,
@@ -144,6 +153,16 @@ router.post('/start', async (req, res) => {
     const { ticket_id, agent_id, branch_name } = req.body || {};
     if (!ticket_id) return res.status(400).json({ error: 'ticket_id required' });
 
+    // Log state transition: assigned → in_progress
+    console.log('[state transition] /start:', {
+      ticketId: ticket_id,
+      fromState: 'assigned',
+      toState: 'in_progress',
+      agent_id,
+      branch_name,
+      timestamp: new Date().toISOString()
+    });
+
     const result = await execute(`
       UPDATE tickets 
       SET state = 'in_progress', 
@@ -168,6 +187,17 @@ router.post('/complete', async (req, res) => {
   try {
     const { agent_id, ticket_id, pr_url, branch_name, files_involved, outputs } = req.body || {};
     if (!ticket_id) return res.status(400).json({ error: 'ticket_id required' });
+
+    // Log state transition: in_progress → in_review
+    console.log('[state transition] /complete:', {
+      ticketId: ticket_id,
+      fromState: 'in_progress',
+      toState: 'in_review',
+      agent_id,
+      pr_url,
+      branch_name,
+      timestamp: new Date().toISOString()
+    });
 
     await execute(`
       UPDATE tickets 

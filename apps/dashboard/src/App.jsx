@@ -52,13 +52,13 @@ function App() {
               <AgentCatalog />
             </ProtectedRoute>
           } />
-          <Route path="/agents" element={
-            <ProtectedRoute>
           <Route path="/agents/catalog/:id" element={
             <ProtectedRoute>
               <AgentDetail />
             </ProtectedRoute>
           } />
+          <Route path="/agents" element={
+            <ProtectedRoute>
               <AgentMonitor />
             </ProtectedRoute>
           } />

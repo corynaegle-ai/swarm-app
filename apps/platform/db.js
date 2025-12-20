@@ -19,12 +19,12 @@ const pool = new Pool({
 pool.on('connect', () => console.log('PostgreSQL client connected'));
 pool.on('error', (err) => console.error('PostgreSQL pool error:', err.message));
 
-// Test connection
+// Test connection (non-fatal - allows server to start without DB for investigation)
 pool.query('SELECT NOW()')
   .then(() => console.log('PostgreSQL connected successfully'))
   .catch(err => {
     console.error('PostgreSQL connection failed:', err.message);
-    process.exit(1);
+    console.warn('WARNING: Server starting without database connection');
   });
 
 /**

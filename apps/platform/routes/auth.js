@@ -11,15 +11,15 @@ const {
   createToken, hashPassword, verifyPassword, requireAuth, requireAdmin 
 } = require('../middleware/auth');
 
-// Cookie options for cross-subdomain auth
+// Cookie options - environment-aware
+const isProduction = process.env.NODE_ENV === "production";
 const cookieOptions = {
   httpOnly: true,
-  secure: true,
-  sameSite: 'lax',
-  domain: process.env.COOKIE_DOMAIN || '.swarmstack.net',
-  maxAge: 86400000  // 24 hours
+  secure: isProduction,  // Only secure in production (HTTPS)
+  sameSite: "lax",
+  maxAge: 86400000,  // 24 hours
+  ...(isProduction && { domain: process.env.COOKIE_DOMAIN || ".swarmstack.net" })
 };
-
 // Helper: Get user permissions from role
 async function getUserPermissions(roleId) {
   if (!roleId) return [];

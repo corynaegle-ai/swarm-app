@@ -312,6 +312,11 @@ export default function KanbanBoard() {
                     <div className="description-box">{selectedTicket.description}</div>
                   </div>
                 )}
+                {selectedTicket.created_at && (
+                  <div className="detail-timestamps">
+                    <span><Clock size={14} /> Created: {getRelativeTime(selectedTicket.created_at)}</span>
+                  </div>
+                )}
                 <div className="modal-actions">
                   <Link 
                     to={`/tickets?highlight=${selectedTicket.id}`} 
@@ -674,6 +679,20 @@ export default function KanbanBoard() {
             color: #ccc;
             font-size: 0.9rem;
             line-height: 1.5;
+          }
+          .detail-timestamps {
+            display: flex;
+            gap: 2rem;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            font-size: 0.8rem;
+            color: #555;
+          }
+          .detail-timestamps span {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
           }
           .modal-actions {
             margin-top: 1.5rem;

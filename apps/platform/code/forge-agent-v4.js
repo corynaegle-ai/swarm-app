@@ -206,63 +206,98 @@ async function processTicket(ticket, projectSettings = {}) {
   const model = projectSettings?.worker_model || MODEL_BY_SCOPE[ticket.estimated_scope] || CONFIG.claudeModel;
   const branchName = `forge/${ticket.id}-${Date.now()}`;
   let repoDir = null;
+  const agentLearning = require('../lib/agent-learning.js');
+  const startTime = Date.now();
 
   try {
     log.info('Processing ticket', { id: ticket.id, title: ticket.title, model });
-    
+
     // Step 1: Clone repo
     repoDir = path.join(CONFIG.workDir, `repo-${ticket.id}-${Date.now()}`);
     cloneRepo(ticket.repo_url, repoDir);
     createBranch(repoDir, branchName);
-    
+
     // Step 2: Get existing file list for context
     const existingFiles = getRepoFileList(repoDir);
     log.info('Repository cloned', { files: existingFiles.length });
-    
+
     // Step 3: Fetch RAG context
     const ragContext = await fetchRagContext(ticket);
-    
+
     // Step 4: Read existing files that need modification
     let enrichedRagContext = ragContext;
     if (ragContext?.files_to_modify?.length > 0) {
       enrichedRagContext = await enrichWithFileContents(ragContext, repoDir);
     }
-    
+
     // Step 5: Build prompt and call Claude
     const prompt = buildImplementationPrompt(ticket, enrichedRagContext, existingFiles);
     const response = await callClaude([{ role: 'user', content: prompt }], model);
     const result = parseCodeResponse(response);
-    
+
     if (!result.files || result.files.length === 0) {
-      throw new Error('No files generated');
+      throw new Error('No files generated - Claude returned empty response');
     }
-    
-    log.info('Implementation generated', { 
+
+    log.info('Implementation generated', {
       files: result.files.length,
       modifications: result.files.filter(f => f.action === 'modify').length,
       creations: result.files.filter(f => f.action === 'create').length
     });
-    
+
     // Step 6: Write, commit, push, create PR
     const filesWritten = writeFiles(repoDir, result.files);
     commitAndPush(repoDir, ticket, branchName, result.summary || 'Implementation');
     const prUrl = await createPullRequest(ticket, branchName, result.summary || 'Implementation');
-    
+
     log.info('Ticket completed', { id: ticket.id, prUrl, files: filesWritten.length });
-    
+
     return {
       success: true,
       prUrl,
       filesWritten,
       summary: result.summary,
-      criteriaStatus: result.criteriaStatus
+      criteriaStatus: result.criteriaStatus,
+      durationMs: Date.now() - startTime
     };
-    
+
   } catch (err) {
-    log.error('Ticket failed', { id: ticket.id, error: err.message });
+    const durationMs = Date.now() - startTime;
+
+    // Classify error for intelligent retry strategy
+    const classification = agentLearning.classifyError(err.message);
+
+    log.error('Ticket failed', {
+      id: ticket.id,
+      error: err.message,
+      errorCategory: classification.category,
+      errorSubcategory: classification.subcategory,
+      durationMs
+    });
+
+    // Determine error type for better reporting
+    let errorType = 'runtime';
+    if (err.message.includes('timeout') || err.message.includes('timed out')) {
+      errorType = 'timeout';
+    } else if (err.message.includes('API') || err.message.includes('rate limit')) {
+      errorType = 'api';
+    } else if (err.message.includes('ENOENT') || err.message.includes('EACCES')) {
+      errorType = 'runtime';
+    } else if (err.message.includes('git') || err.message.includes('clone')) {
+      errorType = 'git';
+    }
+
     return {
       success: false,
-      error: err.message
+      error: err.message,
+      errorType,
+      errorClassification: {
+        category: classification.category,
+        subcategory: classification.subcategory,
+        confidence: classification.confidence
+      },
+      durationMs,
+      stack: err.stack
     };
   } finally {
     if (repoDir && fs.existsSync(repoDir)) {

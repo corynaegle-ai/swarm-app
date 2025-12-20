@@ -43,6 +43,48 @@ const ERROR_PATTERNS = {
 };
 
 /**
+ * Retry Strategy Configuration
+ * Defines max retries and backoff strategy for each error category
+ */
+const RETRY_STRATEGIES = {
+  api: {
+    maxRetries: 7,
+    backoffType: 'exponential',
+    baseDelayMs: 1000
+  },
+  timeout: {
+    maxRetries: 5,
+    backoffType: 'exponential',
+    baseDelayMs: 2000
+  },
+  runtime: {
+    maxRetries: 3,
+    backoffType: 'linear',
+    baseDelayMs: 5000
+  },
+  logic: {
+    maxRetries: 2,
+    backoffType: 'linear',
+    baseDelayMs: 3000
+  },
+  syntax: {
+    maxRetries: 0,
+    backoffType: 'none',
+    baseDelayMs: 0
+  },
+  context: {
+    maxRetries: 1,
+    backoffType: 'linear',
+    baseDelayMs: 5000
+  },
+  manual_review: {
+    maxRetries: 0,
+    backoffType: 'none',
+    baseDelayMs: 0
+  }
+};
+
+/**
  * Classify an error message into a category
  */
 function classifyError(errorMessage, context = {}) {
@@ -171,13 +213,69 @@ async function recordExecutionError(executionId, error, classification = null, t
  */
 async function logExecutionWithError(params) {
   const { executionId, rowId, error } = await logExecution(params);
-  
+
   if (!error && params.outcome === 'failure' && params.errorMessage) {
     const classification = classifyError(params.errorMessage);
     await recordExecutionError(rowId, params.errorMessage, classification, params.tenantId);
   }
-  
+
   return { executionId, rowId };
+}
+
+/**
+ * Get retry strategy for an error category
+ * @param {string} errorCategory - The error category (api, timeout, runtime, etc.)
+ * @returns {object} Retry strategy configuration
+ */
+function getRetryStrategy(errorCategory) {
+  return RETRY_STRATEGIES[errorCategory] || RETRY_STRATEGIES.manual_review;
+}
+
+/**
+ * Calculate backoff delay for a retry attempt
+ * @param {string} errorCategory - The error category
+ * @param {number} attemptNumber - Current attempt number (1-based)
+ * @returns {number} Delay in milliseconds
+ */
+function calculateBackoffDelay(errorCategory, attemptNumber) {
+  const strategy = getRetryStrategy(errorCategory);
+
+  if (strategy.backoffType === 'none') {
+    return 0;
+  }
+
+  if (strategy.backoffType === 'exponential') {
+    // Exponential: baseDelay * 2^(attempt - 1)
+    return strategy.baseDelayMs * Math.pow(2, attemptNumber - 1);
+  }
+
+  if (strategy.backoffType === 'linear') {
+    // Linear: baseDelay * attempt
+    return strategy.baseDelayMs * attemptNumber;
+  }
+
+  return strategy.baseDelayMs;
+}
+
+/**
+ * Determine if a ticket should be retried based on error classification and attempt count
+ * @param {string} errorMessage - The error message to classify
+ * @param {number} currentAttempts - Number of attempts so far
+ * @returns {object} { shouldRetry: boolean, strategy: object, nextDelay: number }
+ */
+function shouldRetryTicket(errorMessage, currentAttempts = 0) {
+  const classification = classifyError(errorMessage);
+  const strategy = getRetryStrategy(classification.category);
+  const shouldRetry = currentAttempts < strategy.maxRetries;
+  const nextDelay = shouldRetry ? calculateBackoffDelay(classification.category, currentAttempts + 1) : 0;
+
+  return {
+    shouldRetry,
+    strategy,
+    classification,
+    nextDelay,
+    attemptsRemaining: Math.max(0, strategy.maxRetries - currentAttempts)
+  };
 }
 
 // Exports
@@ -187,5 +285,9 @@ module.exports = {
   logExecutionWithError,
   classifyError,
   generateExecutionId,
-  ERROR_PATTERNS
+  getRetryStrategy,
+  calculateBackoffDelay,
+  shouldRetryTicket,
+  ERROR_PATTERNS,
+  RETRY_STRATEGIES
 };

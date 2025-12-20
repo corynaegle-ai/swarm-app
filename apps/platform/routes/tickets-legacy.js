@@ -257,42 +257,103 @@ router.post('/release', async (req, res) => {
   }
 });
 
-// POST /fail - Agent reports failure
+// POST /fail - Agent reports failure with dynamic retry strategy
 router.post('/fail', async (req, res) => {
   try {
     const { ticket_id, agent_id, error_message, should_retry } = req.body || {};
     if (!ticket_id) return res.status(400).json({ error: 'ticket_id required' });
 
-    // Get current rejection count
-    const ticket = await queryOne('SELECT rejection_count FROM tickets WHERE id = $1', [ticket_id]);
-    const newCount = (ticket?.rejection_count || 0) + 1;
-    
-    // If too many failures, put on hold
-    const newState = newCount >= 3 ? 'on_hold' : (should_retry ? 'ready' : 'on_hold');
-    const holdReason = newCount >= 3 ? 'Too many failures' : error_message;
-    const logEntry = `[${new Date().toISOString()}] Failed: ${error_message}\n`;
-    
+    const agentLearning = require('../lib/agent-learning.js');
+
+    // Get current ticket state
+    const ticket = await queryOne(
+      'SELECT rejection_count, retry_count, retry_strategy FROM tickets WHERE id = $1',
+      [ticket_id]
+    );
+
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    const currentRetryCount = ticket.retry_count || 0;
+    const newRejectionCount = (ticket.rejection_count || 0) + 1;
+
+    // Use intelligent retry strategy based on error classification
+    const retryDecision = agentLearning.shouldRetryTicket(error_message, currentRetryCount);
+    const { shouldRetry, classification, strategy, nextDelay, attemptsRemaining } = retryDecision;
+
+    // Determine new state
+    let newState;
+    if (shouldRetry) {
+      newState = 'ready'; // Return to ready queue for retry
+    } else {
+      newState = 'on_hold'; // No more retries - put on hold
+    }
+
+    const holdReason = !shouldRetry ?
+      `Max retries exceeded for ${classification.category} error (${strategy.maxRetries} attempts)` :
+      null;
+
+    const logEntry = `[${new Date().toISOString()}] Failed (attempt ${currentRetryCount + 1}): ${error_message} [${classification.category}/${classification.subcategory}]\n`;
+
+    // Store retry strategy info in ticket
+    const retryStrategyJson = JSON.stringify({
+      errorCategory: classification.category,
+      errorSubcategory: classification.subcategory,
+      maxRetries: strategy.maxRetries,
+      backoffType: strategy.backoffType,
+      nextDelayMs: nextDelay,
+      attemptsRemaining
+    });
+
     await execute(`
-      UPDATE tickets 
+      UPDATE tickets
       SET state = $1,
           assignee_id = NULL,
           assignee_type = NULL,
           vm_id = NULL,
           rejection_count = $2,
-          hold_reason = $3,
-          error = $4,
-          progress_log = COALESCE(progress_log, '') || $5
-      WHERE id = $6
+          retry_count = $3,
+          retry_strategy = $4,
+          hold_reason = $5,
+          error = $6,
+          progress_log = COALESCE(progress_log, '') || $7
+      WHERE id = $8
     `, [
       newState,
-      newCount,
-      newState === 'on_hold' ? holdReason : null,
+      newRejectionCount,
+      currentRetryCount + 1,
+      retryStrategyJson,
+      holdReason,
       error_message,
       logEntry,
       ticket_id
     ]);
-    
-    res.json({ success: true, state: newState, rejection_count: newCount });
+
+    console.log('[retry strategy] /fail decision:', {
+      ticketId: ticket_id,
+      errorCategory: classification.category,
+      retryCount: currentRetryCount + 1,
+      maxRetries: strategy.maxRetries,
+      shouldRetry,
+      nextState: newState,
+      nextDelayMs: nextDelay
+    });
+
+    res.json({
+      success: true,
+      state: newState,
+      rejection_count: newRejectionCount,
+      retry_count: currentRetryCount + 1,
+      retry_decision: {
+        should_retry: shouldRetry,
+        error_category: classification.category,
+        error_subcategory: classification.subcategory,
+        attempts_remaining: attemptsRemaining,
+        next_delay_ms: nextDelay,
+        backoff_type: strategy.backoffType
+      }
+    });
   } catch (err) {
     console.error('POST /fail error:', err);
     res.status(500).json({ error: 'Internal server error' });

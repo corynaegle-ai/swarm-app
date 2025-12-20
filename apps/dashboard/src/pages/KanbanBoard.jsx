@@ -3,7 +3,8 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Bot, User } from 'lucide-react';
+import { Bot, User, Clock } from 'lucide-react';
+import { getRelativeTime } from '../utils/time';
 import { useAuth } from '../context/AuthContext';
 import './KanbanBoard.css';
 import Sidebar from '../components/Sidebar';
@@ -250,11 +251,19 @@ export default function KanbanBoard() {
                     <div className="card-title">{ticket.title}</div>
                     <div className="card-footer">
                       <span className="card-project">{getProjectName(ticket.project_id)}</span>
-                      {ticket.assignee_id && (
-                        <span className="card-assignee">
-                          {ticket.assignee_type === 'agent' ? <Bot size={14} /> : <User size={14} />}
-                        </span>
-                      )}
+                      <div className="card-footer-right">
+                        {ticket.created_at && (
+                          <span className="card-timestamp">
+                            <Clock size={12} />
+                            {getRelativeTime(ticket.created_at)}
+                          </span>
+                        )}
+                        {ticket.assignee_id && (
+                          <span className="card-assignee">
+                            {ticket.assignee_type === 'agent' ? <Bot size={14} /> : <User size={14} />}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -301,6 +310,11 @@ export default function KanbanBoard() {
                   <div className="detail-block">
                     <label>Description</label>
                     <div className="description-box">{selectedTicket.description}</div>
+                  </div>
+                )}
+                {selectedTicket.created_at && (
+                  <div className="detail-timestamps">
+                    <span><Clock size={14} /> Created: {getRelativeTime(selectedTicket.created_at)}</span>
                   </div>
                 )}
                 <div className="modal-actions">
@@ -563,6 +577,18 @@ export default function KanbanBoard() {
             text-overflow: ellipsis;
             white-space: nowrap;
           }
+          .card-footer-right {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+          }
+          .card-timestamp {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.65rem;
+            color: #555;
+          }
           .card-assignee {
             font-size: 0.9rem;
           }
@@ -653,6 +679,20 @@ export default function KanbanBoard() {
             color: #ccc;
             font-size: 0.9rem;
             line-height: 1.5;
+          }
+          .detail-timestamps {
+            display: flex;
+            gap: 2rem;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(255,255,255,0.04);
+            font-size: 0.8rem;
+            color: #555;
+          }
+          .detail-timestamps span {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
           }
           .modal-actions {
             margin-top: 1.5rem;

@@ -3,7 +3,8 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Bot, User } from 'lucide-react';
+import { Bot, User, Clock } from 'lucide-react';
+import { getRelativeTime } from '../utils/time.js';
 import { useAuth } from '../context/AuthContext';
 import Sidebar from '../components/Sidebar';
 import useTickets from '../hooks/useTickets';
@@ -265,22 +266,6 @@ export default function Tickets() {
     return project?.name || 'Unknown';
   };
 
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '—';
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now - d;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return d.toLocaleDateString();
-  };
-
 
   // Calculate active filters count
   const activeFilters = [filterState, filterProject].filter(Boolean).length;
@@ -410,6 +395,7 @@ export default function Tickets() {
                 <th className="th-scope">Scope</th>
                 <th className="th-verify">Verify</th>
                 <th className="th-assignee">Assignee</th>
+                <th className="th-created">Created</th>
                 <th className="th-updated">Updated</th>
                 <th className="th-actions"></th>
               </tr>
@@ -417,14 +403,14 @@ export default function Tickets() {
             <tbody>
               {loading && tickets.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="loading-row">
+                  <td colSpan="9" className="loading-row">
                     <div className="loading-pulse"></div>
                     Loading tickets...
                   </td>
                 </tr>
               ) : tickets.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="empty-row">
+                  <td colSpan="9" className="empty-row">
                     <div className="empty-state">
                       <span className="empty-icon">📋</span>
                       <p>No tickets found</p>
@@ -510,8 +496,14 @@ export default function Tickets() {
                       <span className="assignee-id">{ticket.assignee_id || '—'}</span>
                     </span>
                   </td>
+                  <td className="td-created">
+                    <span className="time-ago">
+                      <Clock size={14} />
+                      {getRelativeTime(ticket.created_at) || '—'}
+                    </span>
+                  </td>
                   <td className="td-updated">
-                    <span className="time-ago">{formatDate(ticket.updated_at)}</span>
+                    <span className="time-ago">{getRelativeTime(ticket.updated_at) || '—'}</span>
                   </td>
                   <td className="td-actions">
                     <button 
@@ -781,8 +773,8 @@ export default function Tickets() {
                 )}
 
                 <div className="detail-timestamps">
-                  <span>Created: {new Date(selectedTicket.created_at).toLocaleString()}</span>
-                  <span>Updated: {new Date(selectedTicket.updated_at).toLocaleString()}</span>
+                  <span><Clock size={14} /> Created: {new Date(selectedTicket.created_at).toLocaleString()}</span>
+                  <span><Clock size={14} /> Updated: {new Date(selectedTicket.updated_at).toLocaleString()}</span>
                 </div>
                 {/* Action Buttons */}
                 <div className="ticket-actions">
@@ -1258,6 +1250,9 @@ export default function Tickets() {
         }
         .assignee-id { color: #888; }
         .time-ago {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
           color: #666;
           font-size: 0.85rem;
         }
@@ -1506,6 +1501,11 @@ export default function Tickets() {
           border-top: 1px solid rgba(255,255,255,0.04);
           font-size: 0.8rem;
           color: #555;
+        }
+        .detail-timestamps span {
+          display: flex;
+          align-items: center;
+          gap: 0.4rem;
         }
 
         /* Active nav state */

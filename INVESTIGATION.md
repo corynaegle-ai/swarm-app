@@ -765,14 +765,138 @@ The sentinel assignment issue is a **secondary root cause** that will block tick
 
 ---
 
-## Summary
+## Root Cause Summary
 
-**Root Cause #1:** Tickets are created in `ready` state without `assignee_id`, but the Engine filters for `assignee_id IS NOT NULL`.
+### Primary Root Cause: Missing `assignee_id` on Ticket Activation
 
-**Root Cause #2:** No sentinel agent assignment logic exists for tickets that reach `in_review` state after forge agent completion.
+**Failure Point:** `apps/platform/routes/hitl.js` → `activateTicketsForBuild()` (lines 434-460)
 
-**Impact:** No tickets are ever picked up by the Engine, and even if they were, they would stall at `in_review` state.
+**Description:** When users click "Start Build" in the HITL workflow, tickets are transitioned from `draft` to `ready` state, but `assignee_id` and `assignee_type` are not set. The Engine (`docs/engine-pg.js`) queries for tickets with `WHERE assignee_id IS NOT NULL`, causing all tickets to be invisible to the Engine.
 
-**Fix Complexity:**
-- Primary (forge assignment): Low - Single line change in `activateTicketsForBuild()`
-- Secondary (sentinel assignment): Medium - Add sentinel assignment after `setInReview()` and potentially add sentinel polling
+**Evidence:**
+- Code reference: `activateTicketsForBuild()` lines 434-460 - UPDATE statement missing assignee fields
+- Engine query: `getReadyTickets()` lines 138-148 - WHERE clause requires `assignee_id IS NOT NULL`
+- Database observation: Tickets in `ready` state have `assignee_id = NULL`
+
+**Severity:** Critical - Blocks ALL autonomous builds from executing
+
+---
+
+### Secondary Root Cause: Missing Sentinel Agent Assignment
+
+**Failure Point:** `docs/engine-pg.js` → `setInReview()` (lines 198-208)
+
+**Description:** After forge agent completes work and a PR is created, tickets are set to `in_review` state without assigning a sentinel agent. The Engine only polls for `state = 'ready'` tickets, not `in_review` tickets.
+
+**Evidence:**
+- Code reference: `setInReview()` - Does not set `assignee_id` for sentinel agent
+- Engine poll: `getReadyTickets()` - Only queries `WHERE state = 'ready'`
+- No `getReviewTickets()` method exists
+- SENTINEL is a verification phase, not a ticket assignee
+
+**Severity:** High - Even if primary issue is fixed, tickets will stall at `in_review`
+
+---
+
+## Fix Implementation Checklist
+
+### Phase 3: Required Fixes
+
+| Priority | Issue | File | Function | Fix |
+|----------|-------|------|----------|-----|
+| P0 | Missing forge agent assignment | `apps/platform/routes/hitl.js` | `activateTicketsForBuild()` | Set `assignee_id='forge-agent', assignee_type='agent'` when state='ready' |
+| P1 | Missing sentinel assignment | `docs/engine-pg.js` | `setInReview()` or `_postCodeGeneration()` | Set `assignee_id='sentinel-agent'` after PR creation |
+| P2 | Engine needs to poll review tickets | `docs/engine-pg.js` | `_pollOnce()` | Add `getReviewTickets()` query and execution |
+
+### Recommended Fix (Option A - Minimal Change)
+
+**Step 1:** Fix forge agent assignment in `activateTicketsForBuild()`:
+```javascript
+// apps/platform/routes/hitl.js line ~445
+await execute(`
+  UPDATE tickets
+  SET state = $1,
+      assignee_id = CASE WHEN $1 = 'ready' THEN 'forge-agent' ELSE NULL END,
+      assignee_type = CASE WHEN $1 = 'ready' THEN 'agent' ELSE NULL END,
+      updated_at = CURRENT_TIMESTAMP
+  WHERE id = $2 AND state = 'draft'
+`, [newState, ticket.id]);
+```
+
+**Step 2:** Fix sentinel assignment after PR creation:
+```javascript
+// docs/engine-pg.js after line 639
+await this.pgPool.query(`
+  UPDATE tickets
+  SET assignee_id = 'sentinel-agent',
+      assignee_type = 'agent'
+  WHERE id = $1
+`, [ticketId]);
+```
+
+**Step 3:** Add sentinel polling and execution (optional - depends on architecture decision):
+```javascript
+// docs/engine-pg.js new method
+async getReviewTickets(limit) {
+  return (await this.pgPool.query(`
+    SELECT * FROM tickets
+    WHERE state = 'in_review'
+      AND assignee_type = 'agent'
+      AND vm_id IS NULL
+    ORDER BY updated_at ASC
+    LIMIT $1
+  `, [limit])).rows;
+}
+```
+
+---
+
+## Impact Assessment
+
+| State | Before Fix | After Fix |
+|-------|------------|-----------|
+| `draft` → `ready` | Tickets stuck, Engine never sees them | Engine finds and executes tickets |
+| `ready` → `in_progress` | Never happens | Engine claims ticket, VM spawned |
+| `in_progress` → `in_review` | Never happens | Forge agent completes, PR created |
+| `in_review` → `done` | N/A (never reached) | Sentinel reviews, approves, completes |
+
+---
+
+## Verification After Fix
+
+### Database Query to Verify Workflow Progression:
+```sql
+SELECT id, state, assignee_id, assignee_type, pr_url, created_at, updated_at
+FROM tickets
+WHERE design_session = '<session_id>'
+ORDER BY created_at;
+```
+
+**Expected Output After Fix:**
+| state | assignee_id | assignee_type | pr_url |
+|-------|-------------|---------------|--------|
+| done | sentinel-agent | agent | https://github.com/... |
+
+### Expected Log Output:
+```
+[start-build] Ticket activation complete: 3 tickets set to 'ready', assigned to forge-agent
+[engine] Found 3 ready tickets, dispatching...
+[state transition] /claim: ticketId=xxx, ready → assigned, agent=forge-agent
+[state transition] /start: ticketId=xxx, assigned → in_progress
+[FORGE] Processing ticket - processTicket() invoked: ticketId=xxx
+[state transition] /complete: ticketId=xxx, in_progress → in_review
+[engine] Assigned sentinel-agent to ticket xxx for review
+[engine] Ticket xxx completed successfully, state → done
+```
+
+---
+
+## Conclusion
+
+**Root Cause Identified:** The swarm workflow fails because `activateTicketsForBuild()` does not set `assignee_id` when transitioning tickets to `ready` state, causing the Engine's polling query to return zero results.
+
+**Secondary Issue:** Even if forge agent completes, no sentinel agent is assigned for review, causing tickets to stall at `in_review`.
+
+**Fix Complexity:** Low to Medium - Primary fix is a single UPDATE statement change; secondary fix requires additional assignment logic and potentially engine polling updates.
+
+**Ready for Phase 3:** Yes - Root cause is definitively identified with clear code references and proposed solutions.

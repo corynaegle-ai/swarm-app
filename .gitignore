@@ -37,3 +37,8 @@ tmp/
 
 # Auto Claude data directory
 .auto-claude/
+-e 
+# Auto-Claude local files
+.worktrees/
+.claude_settings.json
+.auto-claude-status

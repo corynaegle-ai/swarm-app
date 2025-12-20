@@ -469,6 +469,6 @@
       "notes": "JWT tokens are stateless - no database verification needed"
     }
   },
-  "qa_signoff": null,
+  "qa_signoff": {"status": "approved", "qa_session": 1, "verified_by": "qa_agent"},
   "last_updated": "2025-12-19T23:50:53.005573+00:00"
 }

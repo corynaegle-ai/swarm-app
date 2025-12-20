@@ -1,28 +1,22 @@
 /**
  * useHITL - Custom hook for Human-in-the-Loop API interactions
- * Replaces useDesignSession.js with new /api/hitl endpoints
+ * Uses centralized apiCall for proper Bearer token authentication
  */
 import { useState, useCallback } from 'react';
+import { apiCall } from '../utils/api';
 
-const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api/hitl';
+const API_PATH = '/api/hitl';
 
 export function useHITL() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Helper for API calls with error handling
-  const apiCall = useCallback(async (url, options = {}) => {
+  // Helper for API calls with loading/error state management
+  const makeRequest = useCallback(async (url, options = {}) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(url, {
-        ...options,
-        credentials: 'include',
-        headers: { 
-          'Content-Type': 'application/json', 
-          ...options.headers 
-        }
-      });
+      const res = await apiCall(url, options);
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || data.message || 'Request failed');
@@ -38,7 +32,7 @@ export function useHITL() {
 
   // Create new HITL session
   const createSession = useCallback((projectName, description, projectType = 'application', extraParams = {}) => 
-    apiCall(API_BASE, {
+    makeRequest(API_PATH, {
       method: 'POST',
       body: JSON.stringify({ 
         project_name: projectName, 
@@ -46,11 +40,11 @@ export function useHITL() {
         project_type: projectType,
         ...extraParams
       })
-    }), [apiCall]);
+    }), [makeRequest]);
 
   // Get session with messages
   const getSession = useCallback((sessionId) => 
-    apiCall(`${API_BASE}/${sessionId}`), [apiCall]);
+    makeRequest(`${API_PATH}/${sessionId}`), [makeRequest]);
 
   // List sessions with optional state filter
   const listSessions = useCallback((state = null, limit = 50) => {
@@ -58,68 +52,68 @@ export function useHITL() {
     if (state) params.append('state', state);
     if (limit) params.append('limit', limit);
     const queryStr = params.toString();
-    return apiCall(`${API_BASE}${queryStr ? '?' + queryStr : ''}`);
-  }, [apiCall]);
+    return makeRequest(`${API_PATH}${queryStr ? '?' + queryStr : ''}`);
+  }, [makeRequest]);
 
   // User responds to AI question (works in input or clarifying state)
   const respond = useCallback((sessionId, message) =>
-    apiCall(`${API_BASE}/${sessionId}/respond`, {
+    makeRequest(`${API_PATH}/${sessionId}/respond`, {
       method: 'POST',
       body: JSON.stringify({ message })
-    }), [apiCall]);
+    }), [makeRequest]);
 
   // Explicitly start clarification phase
   const startClarification = useCallback((sessionId) =>
-    apiCall(`${API_BASE}/${sessionId}/start-clarification`, {
+    makeRequest(`${API_PATH}/${sessionId}/start-clarification`, {
       method: 'POST'
-    }), [apiCall]);
+    }), [makeRequest]);
 
   // Generate spec card (from clarifying or ready_for_docs)
   const generateSpec = useCallback((sessionId) =>
-    apiCall(`${API_BASE}/${sessionId}/generate-spec`, {
+    makeRequest(`${API_PATH}/${sessionId}/generate-spec`, {
       method: 'POST'
-    }), [apiCall]);
+    }), [makeRequest]);
 
   // Approve spec (from reviewing)
   const approveSpec = useCallback((sessionId) =>
-    apiCall(`${API_BASE}/${sessionId}/approve`, {
+    makeRequest(`${API_PATH}/${sessionId}/approve`, {
       method: 'POST'
-    }), [apiCall]);
+    }), [makeRequest]);
 
   // Start build (Gate 5 - from approved state)
   const startBuild = useCallback((sessionId, confirmed = true) =>
-    apiCall(`${API_BASE}/${sessionId}/start-build`, {
+    makeRequest(`${API_PATH}/${sessionId}/start-build`, {
       method: 'POST',
       body: JSON.stringify({ confirmed })
-    }), [apiCall]);
+    }), [makeRequest]);
 
   // Request revision with feedback
   const requestRevision = useCallback((sessionId, feedback) =>
-    apiCall(`${API_BASE}/${sessionId}/request-revision`, {
+    makeRequest(`${API_PATH}/${sessionId}/request-revision`, {
       method: 'POST',
       body: JSON.stringify({ feedback })
-    }), [apiCall]);
+    }), [makeRequest]);
 
   // Update spec content directly
   const updateSpec = useCallback((sessionId, content) =>
-    apiCall(`${API_BASE}/${sessionId}/update-spec`, {
+    makeRequest(`${API_PATH}/${sessionId}/update-spec`, {
       method: 'POST',
       body: JSON.stringify({ content })
-    }), [apiCall]);
+    }), [makeRequest]);
 
   // Get message history
   const getMessages = useCallback((sessionId) =>
-    apiCall(`${API_BASE}/${sessionId}/messages`), [apiCall]);
+    makeRequest(`${API_PATH}/${sessionId}/messages`), [makeRequest]);
 
   // Delete session
   const deleteSession = useCallback((sessionId) =>
-    apiCall(`${API_BASE}/${sessionId}`, {
+    makeRequest(`${API_PATH}/${sessionId}`, {
       method: 'DELETE'
-    }), [apiCall]);
+    }), [makeRequest]);
 
   // Get state machine metadata
   const getStateMeta = useCallback(() =>
-    apiCall(`${API_BASE}/meta/states`), [apiCall]);
+    makeRequest(`${API_PATH}/meta/states`), [makeRequest]);
 
   // Clear error
   const clearError = useCallback(() => setError(null), []);

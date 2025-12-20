@@ -1,7 +1,9 @@
 /**
  * Custom hook for Design Session API interactions
+ * Uses centralized apiCall for proper Bearer token authentication
  */
 import { useState, useCallback } from 'react';
+import { apiCall } from '../utils/api';
 
 const API_BASE = '/api/design-sessions';
 
@@ -13,10 +15,8 @@ export function useDesignSession() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(API_BASE, {
+      const res = await apiCall(API_BASE, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ project_name: projectName, description })
       });
       const data = await res.json();
@@ -34,7 +34,7 @@ export function useDesignSession() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/${sessionId}`, { credentials: 'include' });
+      const res = await apiCall(`${API_BASE}/${sessionId}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch session');
       return data;
@@ -53,7 +53,7 @@ export function useDesignSession() {
       const params = new URLSearchParams();
       if (state) params.append('state', state);
       params.append('limit', limit);
-      const res = await fetch(`${API_BASE}?${params}`, { credentials: 'include' });
+      const res = await apiCall(`${API_BASE}?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to list sessions');
       return data;
@@ -69,10 +69,8 @@ export function useDesignSession() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/${sessionId}/action`, {
+      const res = await apiCall(`${API_BASE}/${sessionId}/action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ action, payload })
       });
       const data = await res.json();

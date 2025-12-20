@@ -1,9 +1,9 @@
 /**
  * Custom hook for Tickets API interactions
+ * Uses centralized apiCall for proper Bearer token authentication
  */
 import { useState, useCallback } from 'react';
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { apiCall } from '../utils/api';
 
 export function useTickets() {
   const [loading, setLoading] = useState(false);
@@ -19,7 +19,7 @@ export function useTickets() {
       params.append('limit', limit);
       params.append('offset', offset);
       
-      const res = await fetch(`${API_BASE}/api/tickets?${params}`, { credentials: 'include' });
+      const res = await apiCall(`/api/tickets?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch tickets');
       return data;
@@ -35,7 +35,7 @@ export function useTickets() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/tickets/${id}`, { credentials: 'include' });
+      const res = await apiCall(`/api/tickets/${id}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch ticket');
       return data;
@@ -51,7 +51,7 @@ export function useTickets() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/tickets/stats`, { credentials: 'include' });
+      const res = await apiCall('/api/tickets/stats');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch stats');
       return data;
@@ -67,10 +67,8 @@ export function useTickets() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/tickets`, {
+      const res = await apiCall('/api/tickets', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(ticketData)
       });
       const data = await res.json();
@@ -88,10 +86,8 @@ export function useTickets() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/tickets/${id}`, {
+      const res = await apiCall(`/api/tickets/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify(updates)
       });
       const data = await res.json();
@@ -109,9 +105,8 @@ export function useTickets() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/tickets/${id}`, {
-        method: 'DELETE',
-        credentials: 'include'
+      const res = await apiCall(`/api/tickets/${id}`, {
+        method: 'DELETE'
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete ticket');
@@ -126,7 +121,7 @@ export function useTickets() {
 
   const getProjects = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/projects`, { credentials: 'include' });
+      const res = await apiCall('/api/projects');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch projects');
       return data;

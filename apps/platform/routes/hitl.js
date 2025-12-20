@@ -397,7 +397,9 @@ router.post('/:sessionId/start-build', async (req, res) => {
     `, [session.tenant_id, req.params.sessionId]);
 
     const readyCount = await activateTicketsForBuild(req.params.sessionId);
-    
+
+    console.log(`[start-build] Ticket activation complete for session ${req.params.sessionId}: ${readyCount} tickets set to 'ready' state, awaiting forge agent pickup`);
+
     // === STEP 5: Broadcast tickets generated ===
     broadcast.ticketsGenerated(req.params.sessionId, { tickets: ticketResult.tickets || [] });
     broadcast.buildProgress(req.params.sessionId, 95, 'Tickets queued for execution', { 

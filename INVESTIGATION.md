@@ -308,6 +308,227 @@ However, **starting the engine is required** for the workflow to function after 
 
 ---
 
+## Subtask 2-2: Engine Dispatcher Flow Analysis
+
+**Date:** 2025-12-20
+**Status:** Completed
+
+### Overview
+
+This analysis traces how the Engine (`docs/engine-pg.js`) polls for tickets, dispatches them to VMs, and invokes `forge-agent-v4.js`.
+
+### Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  SwarmEngine    │     │  StepExecutor   │     │    VM (nsjail)  │     │ forge-agent-v4  │
+│  (engine-pg.js) │────▶│  (executor.js)  │────▶│   Isolated Env  │────▶│   processTicket │
+└─────────────────┘     └─────────────────┘     └─────────────────┘     └─────────────────┘
+        │                                                                         │
+        ▼                                                                         ▼
+   PostgreSQL                                                              GitHub PR
+   (tickets)                                                               Created
+```
+
+### 1. Poll Query for 'ready' Tickets
+
+**Location:** `docs/engine-pg.js` lines 138-148
+
+```javascript
+async getReadyTickets(limit) {
+    const result = await this.pgPool.query(`
+        SELECT * FROM tickets
+        WHERE state = 'ready'
+          AND assignee_id IS NOT NULL      // ⚠️ This filter causes tickets to be missed!
+          AND assignee_type = 'agent'
+          AND vm_id IS NULL
+        ORDER BY created_at ASC
+        LIMIT $1
+    `, [limit]);
+    return result.rows;
+}
+```
+
+**Key Observations:**
+- Polls every 5 seconds (configurable via `pollIntervalMs`)
+- Uses adaptive backoff: `5s → 7.5s → 11.25s → ...` up to `30s` max when no tickets found
+- **CRITICAL FILTER:** `assignee_id IS NOT NULL` - This is why tickets are never found!
+- Returns oldest tickets first (`ORDER BY created_at ASC`)
+- Respects concurrency limit (`maxConcurrentVMs = 3` by default)
+
+### 2. Dispatch Mechanism to VMs
+
+**Location:** `docs/engine-pg.js` lines 443-489 (`executeTicket()`)
+
+**Dispatch Flow:**
+1. **Claim ticket atomically** (lines 469-474)
+   ```javascript
+   const claimed = await this.claimTicket(vmId, ticketId);
+   // Updates: state='in_progress', vm_id=vmId, started_at=NOW()
+   ```
+
+2. **Track in registry** (lines 477-483)
+   ```javascript
+   this.registryStmts.assignVm.run(vmId, ticketId);  // SQLite registry
+   this.activeExecutions.set(ticketId, { vmId, executor, startTime, runId });
+   ```
+
+3. **Execute asynchronously** (lines 486-488)
+   ```javascript
+   this._executeAsync(ticket, executor, vmId, inputs).catch(...)
+   // Non-blocking - allows polling to continue
+   ```
+
+### 3. Forge Agent Invocation Chain
+
+**Location:** `docs/engine-pg.js` lines 494-586 (`_executeAsync()`)
+
+**Two Execution Modes:**
+
+#### Mode A: Workflow Execution (if `execution_mode === 'workflow'`)
+```javascript
+const dispatcher = new WorkflowDispatcher({ useVm: true });
+const workflowResult = await dispatcher.runWorkflowForTicket(
+    ticket.workflow_id,
+    ticketId,
+    { ...inputs, ticket, projectSettings: {} }
+);
+```
+
+#### Mode B: Single Agent Execution (if `assignee_type === 'agent'`)
+```javascript
+// Step 1: Get agent from SQLite registry
+const agent = this.registryStmts.getAgent.get(ticket.assignee_id, ticket.assignee_id);
+// Query: SELECT * FROM agents WHERE id = ? OR name = ?
+
+// Step 2: Execute via StepExecutor
+result = await executor.executeStep({
+    id: ticketId,
+    agent: agent.name,          // e.g., 'forge-agent-v4'
+    agent_version: agent.version,
+    inputs: { ...inputs, ticket, projectSettings: {} }
+}, { trigger: inputs });
+```
+
+**StepExecutor (external `/opt/swarm-engine/lib/executor.js`):**
+- Acquires VM slot (file-based locking)
+- Runs agent in nsjail sandbox
+- Agent entry point determined by `agent.capabilities.entry` in registry
+
+### 4. How forge-agent-v4.js Gets Invoked
+
+**Agent Registry (SQLite `/opt/swarm-registry/registry.db`):**
+```sql
+-- Expected agent registration
+INSERT INTO agents (id, name, version, capabilities, status)
+VALUES (
+    'forge-agent',
+    'forge-agent-v4',
+    '4.0.0',
+    '{"entry": "node /opt/swarm-agents/forge-agent-v4.js"}',
+    'active'
+);
+```
+
+**Invocation Chain:**
+1. Engine calls `executor.executeStep({ agent: 'forge-agent-v4', ... })`
+2. Executor looks up agent in registry by name
+3. Executor reads `capabilities.entry` (e.g., `node /path/to/forge-agent-v4.js`)
+4. Executor spawns VM with nsjail, executes entry command
+5. Agent receives ticket data via stdin/environment
+6. Agent calls `processTicket(ticket)` from `apps/platform/code/forge-agent-v4.js`
+7. Agent outputs result to stdout, executor captures it
+
+### 5. Post-Execution Flow
+
+**Location:** `docs/engine-pg.js` lines 549-671
+
+After `processTicket()` completes:
+1. Store artifacts (stdout, stderr) in registry
+2. If `repo_url` exists: Run verification via `verify()` client
+3. If verification passes: Create PR via GitHub CLI
+4. Set ticket state to `in_review` (or `needs_review` on failure)
+
+```javascript
+// Success path (lines 635-640)
+const prUrl = await this._createPR(ticketId, branchName, repoUrl, ticket);
+await this.setInReview(prUrl, evidence, ticketId);
+// Updates: state='in_review', pr_url=prUrl, verification_status='passed'
+```
+
+### 6. Why Forge Agent Never Executes
+
+**Root Cause Chain:**
+
+```
+1. User clicks "Start Build"
+   └─▶ hitl.js:/start-build → activateTicketsForBuild()
+
+2. activateTicketsForBuild() sets state='ready' but assignee_id=NULL
+   └─▶ Tickets in DB: state='ready', assignee_id=NULL
+
+3. Engine polls with: WHERE state='ready' AND assignee_id IS NOT NULL
+   └─▶ Returns 0 rows (assignee_id IS NULL fails the filter)
+
+4. Engine.executeTicket() never called
+   └─▶ StepExecutor never invoked
+   └─▶ forge-agent-v4.js processTicket() never called
+
+5. Tickets remain stuck in 'ready' state forever
+```
+
+### 7. Visualization of Expected vs Actual Flow
+
+**Expected Flow (After Fix):**
+```
+start-build → activateTicketsForBuild()
+    │
+    ▼
+tickets SET state='ready', assignee_id='forge-agent', assignee_type='agent'
+    │
+    ▼
+Engine.getReadyTickets() → Returns ticket
+    │
+    ▼
+Engine.executeTicket() → Engine.claimTicket() → state='in_progress'
+    │
+    ▼
+StepExecutor.executeStep() → VM spawned → forge-agent-v4.js
+    │
+    ▼
+processTicket() → Clone repo → Generate code → Create PR
+    │
+    ▼
+_postCodeGeneration() → verify() → setInReview() → state='in_review'
+```
+
+**Actual Flow (Current Bug):**
+```
+start-build → activateTicketsForBuild()
+    │
+    ▼
+tickets SET state='ready', assignee_id=NULL  // ⚠️ Missing assignment!
+    │
+    ▼
+Engine.getReadyTickets() → Returns 0 rows (assignee_id IS NULL)
+    │
+    ▼
+❌ STUCK - Nothing happens, tickets never picked up
+```
+
+### Summary
+
+| Component | File | Function | Status |
+|-----------|------|----------|--------|
+| Poll Query | `docs/engine-pg.js:138-148` | `getReadyTickets()` | ✅ Works correctly |
+| Dispatch | `docs/engine-pg.js:443-489` | `executeTicket()` | ✅ Works correctly |
+| Agent Lookup | `docs/engine-pg.js:530` | `getAgent.get()` | ✅ Works correctly |
+| Executor | `/opt/swarm-engine/lib/executor.js` | `executeStep()` | ✅ External dependency |
+| Forge Agent | `apps/platform/code/forge-agent-v4.js` | `processTicket()` | ✅ Code is correct |
+| **Root Cause** | `apps/platform/routes/hitl.js:434-460` | `activateTicketsForBuild()` | ❌ Missing `assignee_id` |
+
+---
+
 ## Summary
 
 **Root Cause:** Tickets are created in `ready` state without `assignee_id`, but the Engine filters for `assignee_id IS NOT NULL`.

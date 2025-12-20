@@ -13,7 +13,17 @@ export function AuthProvider({ children }) {
 
   const checkAuth = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/auth/me`, { credentials: 'include' });
+      const token = localStorage.getItem('swarm_token');
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`${API_URL}/api/auth/me`, {
+        credentials: 'include',
+        headers
+      });
+
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
@@ -26,7 +36,6 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('swarm_token');
       }
     } catch (err) {
-      console.error('Auth check failed:', err);
       setUser(null);
     } finally {
       setLoading(false);
@@ -52,20 +61,25 @@ export function AuthProvider({ children }) {
     // Save token to localStorage for WebSocket auth
     if (data.token) {
       localStorage.setItem('swarm_token', data.token);
-      console.log('[Auth] Token saved to localStorage');
     }
     
     return data;
   };
 
   const logout = async () => {
+    const token = localStorage.getItem('swarm_token');
     try {
+      const headers = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       await fetch(`${API_URL}/api/auth/logout`, {
         method: 'POST',
-        credentials: 'include'
+        credentials: 'include',
+        headers
       });
-    } catch (err) {
-      console.error('Logout error:', err);
+    } catch {
+      // Logout endpoint may fail, but we still clear local state
     } finally {
       setUser(null);
       localStorage.removeItem('swarm_token');

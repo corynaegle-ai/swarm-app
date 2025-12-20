@@ -2,8 +2,7 @@
  * Custom hook for Agents API interactions
  */
 import { useState, useCallback } from 'react';
-
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { apiGet, apiPost } from '../utils/api';
 
 export function useAgents() {
   const [loading, setLoading] = useState(false);
@@ -17,8 +16,8 @@ export function useAgents() {
       if (status) params.append('status', status);
       params.append('limit', limit);
       params.append('offset', offset);
-      
-      const res = await fetch(`${API_BASE}/api/agents?${params}`, { credentials: 'include' });
+
+      const res = await apiGet(`/api/agents?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch agents');
       return data;
@@ -34,7 +33,7 @@ export function useAgents() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/agents/active`, { credentials: 'include' });
+      const res = await apiGet('/api/agents/active');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch active agents');
       return data;
@@ -50,7 +49,7 @@ export function useAgents() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/agents/stats`, { credentials: 'include' });
+      const res = await apiGet('/api/agents/stats');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch agent stats');
       return data;
@@ -66,7 +65,7 @@ export function useAgents() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/agents/${id}`, { credentials: 'include' });
+      const res = await apiGet(`/api/agents/${id}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch agent');
       return data;
@@ -84,7 +83,7 @@ export function useAgents() {
     try {
       const params = new URLSearchParams();
       params.append('limit', limit);
-      const res = await fetch(`${API_BASE}/api/agents/${id}/logs?${params}`, { credentials: 'include' });
+      const res = await apiGet(`/api/agents/${id}/logs?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch agent logs');
       return data;
@@ -102,7 +101,7 @@ export function useAgents() {
     try {
       const params = new URLSearchParams();
       params.append('limit', limit);
-      const res = await fetch(`${API_BASE}/api/agents/${id}/heartbeats?${params}`, { credentials: 'include' });
+      const res = await apiGet(`/api/agents/${id}/heartbeats?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch heartbeats');
       return data;
@@ -120,7 +119,7 @@ export function useAgents() {
     try {
       const params = new URLSearchParams();
       params.append('limit', limit);
-      const res = await fetch(`${API_BASE}/api/agents/${id}/events?${params}`, { credentials: 'include' });
+      const res = await apiGet(`/api/agents/${id}/events?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch events');
       return data;
@@ -136,10 +135,7 @@ export function useAgents() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/agents/${id}/terminate`, {
-        method: 'POST',
-        credentials: 'include'
-      });
+      const res = await apiPost(`/api/agents/${id}/terminate`, {});
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to terminate agent');
       return data;

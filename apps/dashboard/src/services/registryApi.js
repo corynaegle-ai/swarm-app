@@ -3,7 +3,7 @@
  * Calls platform API for agent catalog, personas, and workflows
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+import { apiGet } from '../utils/api';
 
 /**
  * Fetch agents with optional filters
@@ -15,10 +15,10 @@ export async function getAgents(filters = {}) {
   if (filters.name) params.append('name', filters.name);
   if (filters.tag) params.append('tag', filters.tag);
   if (filters.runtime) params.append('runtime', filters.runtime);
-  
-  const url = `${API_BASE}/api/registry/agents${params.toString() ? '?' + params : ''}`;
-  const response = await fetch(url, { credentials: 'include' });
-  
+
+  const endpoint = `/api/registry/agents${params.toString() ? '?' + params : ''}`;
+  const response = await apiGet(endpoint);
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || 'Failed to fetch agents');
@@ -32,10 +32,8 @@ export async function getAgents(filters = {}) {
  * @returns {Promise<Object>} Agent details
  */
 export async function getAgentById(agentId) {
-  const response = await fetch(`${API_BASE}/api/registry/agents/${agentId}`, {
-    credentials: 'include'
-  });
-  
+  const response = await apiGet(`/api/registry/agents/${agentId}`);
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || 'Failed to fetch agent details');
@@ -50,11 +48,10 @@ export async function getAgentById(agentId) {
  * @returns {Promise<Array>} Execution records
  */
 export async function getAgentExecutions(agentId, limit = 20) {
-  const response = await fetch(
-    `${API_BASE}/api/registry/agents/${agentId}/executions?limit=${limit}`,
-    { credentials: 'include' }
+  const response = await apiGet(
+    `/api/registry/agents/${agentId}/executions?limit=${limit}`
   );
-  
+
   if (!response.ok) {
     throw new Error('Failed to fetch executions');
   }
@@ -66,10 +63,8 @@ export async function getAgentExecutions(agentId, limit = 20) {
  * @returns {Promise<Array>} Persona list
  */
 export async function getPersonas() {
-  const response = await fetch(`${API_BASE}/api/registry/personas`, {
-    credentials: 'include'
-  });
-  
+  const response = await apiGet('/api/registry/personas');
+
   if (!response.ok) {
     throw new Error('Failed to fetch personas');
   }
@@ -82,10 +77,8 @@ export async function getPersonas() {
  * @returns {Promise<Object>} Persona content
  */
 export async function getPersonaContent(name) {
-  const response = await fetch(`${API_BASE}/api/registry/personas/${name}`, {
-    credentials: 'include'
-  });
-  
+  const response = await apiGet(`/api/registry/personas/${name}`);
+
   if (!response.ok) {
     throw new Error('Failed to fetch persona');
   }

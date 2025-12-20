@@ -7,7 +7,7 @@ export default function UserMenu() {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate('/signin');
   };
 
   if (!user) return null;

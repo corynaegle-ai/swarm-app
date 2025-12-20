@@ -84,6 +84,43 @@ router.get('/needs-review', requireAuth, requireTenant, requirePermission('view_
   }
 });
 
+// GET /api/tickets/stuck - List tickets stuck in progress states (tenant-isolated)
+// Returns tickets in 'assigned' or 'in_progress' state for >5 minutes without update
+router.get('/stuck', requireAuth, requireTenant, requirePermission('view_projects'), async (req, res) => {
+  try {
+    const { threshold_minutes = 5 } = req.query;
+    const thresholdMs = parseInt(threshold_minutes) * 60 * 1000;
+
+    const tickets = await queryAll(`
+      SELECT t.*,
+             EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - t.updated_at)) * 1000 as stuck_duration_ms
+      FROM tickets t
+      JOIN projects p ON t.project_id = p.id
+      WHERE p.tenant_id = $1
+        AND t.state IN ('assigned', 'in_progress', 'ready')
+        AND t.updated_at < CURRENT_TIMESTAMP - INTERVAL '1 millisecond' * $2
+      ORDER BY t.updated_at ASC
+    `, [req.tenantId, thresholdMs]);
+
+    const stuckTickets = tickets.map(t => ({
+      ...t,
+      stuck_duration_minutes: Math.round(t.stuck_duration_ms / 60000)
+    }));
+
+    res.json({
+      tickets: stuckTickets,
+      count: stuckTickets.length,
+      threshold_minutes: parseInt(threshold_minutes),
+      message: stuckTickets.length > 0
+        ? `Found ${stuckTickets.length} ticket(s) stuck for more than ${threshold_minutes} minutes`
+        : 'No stuck tickets found'
+    });
+  } catch (err) {
+    console.error('GET /tickets/stuck error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/tickets - Create ticket
 router.post('/', requireAuth, requireTenant, requirePermission('manage_tickets'), async (req, res) => {
   try {

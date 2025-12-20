@@ -529,12 +529,250 @@ Engine.getReadyTickets() → Returns 0 rows (assignee_id IS NULL)
 
 ---
 
+## Subtask 2-4: Sentinel Agent Assignment Logic Analysis
+
+**Date:** 2025-12-20
+**Status:** Completed
+
+### Overview
+
+This analysis identifies whether sentinel agent assignment logic exists and where it should be implemented for proper workflow progression from forge agent to sentinel agent after code completion.
+
+### Key Finding: Sentinel Assignment Logic Is Missing
+
+After comprehensive search of the codebase, **there is NO mechanism to assign a sentinel agent to tickets after forge agent completion**.
+
+### What Exists
+
+#### 1. SENTINEL as a Verification Phase (Not a Ticket Assignee)
+
+SENTINEL exists as a **verification phase** within the verifier service, NOT as an agent that claims tickets:
+
+**Location:** `/opt/swarm-verifier/lib/phases/sentinel.js` (external service)
+
+```javascript
+// From docs/engine-pg.js lines 624-631
+const verifyResult = await verify({
+    ticketId,
+    branchName,
+    repoUrl,
+    attempt,
+    acceptanceCriteria: ticket.acceptance_criteria,
+    phases: ['static', 'automated', 'sentinel']  // SENTINEL is a phase here
+});
+```
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SWARM VERIFICATION PIPELINE                   │
+├─────────────────────────────────────────────────────────────────┤
+│  Phase 1: STATIC     → Phase 2: AUTOMATED   → Phase 3: SENTINEL │
+│  (ESLint, syntax)       (Unit tests)           (LLM review)     │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 2. Ticket State After Forge Agent Completes
+
+**Two Paths After Forge Agent Execution:**
+
+| Verification Result | Ticket State | Next Actor |
+|---------------------|--------------|------------|
+| Passed | `in_review` | **None assigned!** |
+| Failed | `needs_review` | **None assigned!** |
+
+**From `docs/engine-pg.js` lines 635-664:**
+```javascript
+if (verifyResult.status === 'passed' || verifyResult.ready_for_pr) {
+    // Create PR and set to in_review
+    const prUrl = await this._createPR(...);
+    await this.setInReview(prUrl, evidence, ticketId);
+    // ⚠️ No sentinel agent assigned!
+} else {
+    // Mark as needs_review
+    await this.setNeedsReview(evidence, ticketId);
+    // ⚠️ No sentinel agent assigned!
+}
+```
+
+#### 3. No Polling for `in_review` or `needs_review` Tickets
+
+**Search Results:**
+- Engine only polls for `state = 'ready'` tickets (lines 138-148)
+- No mechanism polls for `in_review` tickets
+- No mechanism polls for `needs_review` tickets
+- No `/claim` endpoint variant for sentinel-type agents
+
+### What Is Missing
+
+#### 1. Sentinel Agent Assignment After `in_review` State
+
+**Current Flow (Broken):**
+```
+forge-agent → code gen → verify() → PR created → state='in_review'
+                                                        │
+                                                        └─→ STUCK (no one picks up)
+```
+
+**Expected Flow (Per Spec):**
+```
+forge-agent → code gen → verify() → PR created → state='in_review'
+                                                        │
+                                                        └─→ sentinel-agent assigned → review → approve/reject → state='done'
+```
+
+#### 2. Missing Components for Sentinel Workflow
+
+| Missing Component | Purpose | Where to Add |
+|-------------------|---------|--------------|
+| Sentinel polling query | Find `in_review` tickets | `docs/engine-pg.js` |
+| Sentinel assignment | Set `assignee_id = 'sentinel-agent'` | After `setInReview()` |
+| Sentinel execution | Run sentinel review agent | `docs/engine-pg.js` |
+| `in_review → done` transition | Complete ticket after sentinel approval | After sentinel passes |
+
+### Code Evidence
+
+#### No Sentinel Assignment After `setInReview()`
+
+**File:** `docs/engine-pg.js` lines 198-208
+```javascript
+async setInReview(prUrl, evidence, ticketId) {
+    await this.pgPool.query(`
+        UPDATE tickets
+        SET state = 'in_review', pr_url = $1, verification_status = 'passed',
+            updated_at = NOW()
+        WHERE id = $2
+    `, [prUrl, ticketId]);
+    // ⚠️ Missing: assignee_id = 'sentinel-agent', assignee_type = 'agent'
+}
+```
+
+#### No Polling for Review Tickets
+
+**File:** `docs/engine-pg.js` lines 138-148
+```javascript
+async getReadyTickets(limit) {
+    const result = await this.pgPool.query(`
+        SELECT * FROM tickets
+        WHERE state = 'ready'   // ⚠️ Only polls 'ready', not 'in_review'
+          AND assignee_id IS NOT NULL
+          AND assignee_type = 'agent'
+          AND vm_id IS NULL
+        ORDER BY created_at ASC
+        LIMIT $1
+    `, [limit]);
+    return result.rows;
+}
+```
+
+#### No `/claim` Variant for Sentinel
+
+**File:** `apps/platform/routes/tickets-legacy.js` lines 25-117
+```javascript
+router.post('/claim', async (req, res) => {
+    // Only claims tickets WHERE t.state = 'ready'
+    // ⚠️ No option to claim 'in_review' tickets
+    // ⚠️ No agent_type filter for sentinel
+});
+```
+
+### Proposed Fixes
+
+#### Option A: Auto-assign Sentinel After PR Creation (Recommended)
+
+Modify `_postCodeGeneration()` to assign sentinel agent after successful verification:
+
+```javascript
+// In docs/engine-pg.js after line 639
+if (verifyResult.status === 'passed' || verifyResult.ready_for_pr) {
+    const prUrl = await this._createPR(ticketId, branchName, repoUrl, ticket);
+    await this.setInReview(prUrl, evidence, ticketId);
+
+    // NEW: Assign sentinel agent for final review
+    await this.pgPool.query(`
+        UPDATE tickets
+        SET assignee_id = 'sentinel-agent',
+            assignee_type = 'agent'
+        WHERE id = $1
+    `, [ticketId]);
+}
+```
+
+#### Option B: Add Sentinel Polling Loop
+
+Add a second polling method specifically for `in_review` tickets:
+
+```javascript
+async getReviewTickets(limit) {
+    const result = await this.pgPool.query(`
+        SELECT * FROM tickets
+        WHERE state = 'in_review'
+          AND (assignee_id IS NULL OR assignee_id = 'sentinel-agent')
+          AND vm_id IS NULL
+        ORDER BY updated_at ASC
+        LIMIT $1
+    `, [limit]);
+    return result.rows;
+}
+```
+
+#### Option C: Combined Engine Poll (Most Complete)
+
+Modify engine to handle both forge and sentinel execution phases:
+
+```javascript
+async _pollOnce() {
+    // Poll for ready tickets (forge agent)
+    const readyTickets = await this.getReadyTickets(available);
+    for (const ticket of readyTickets) {
+        await this.executeTicket(ticket);
+    }
+
+    // Poll for in_review tickets (sentinel agent)
+    const reviewTickets = await this.getReviewTickets(available);
+    for (const ticket of reviewTickets) {
+        await this.executeSentinelReview(ticket);
+    }
+}
+```
+
+### Summary of Sentinel Issues
+
+| Issue | Description | Priority |
+|-------|-------------|----------|
+| No sentinel assignment | Tickets reach `in_review` but no agent assigned | High |
+| No sentinel polling | Engine doesn't look for `in_review` tickets | High |
+| No `in_review → done` transition | Even if sentinel ran, no completion logic | Medium |
+| SENTINEL is a phase, not agent | Current architecture uses sentinel as verifier phase only | Design |
+
+### Relationship to Primary Root Cause
+
+The sentinel assignment issue is a **secondary root cause** that will block tickets at `in_review` state:
+
+1. **Primary Issue (subtask-2-1 through 2-3):** Tickets stuck at `ready` state
+   - Cause: `assignee_id = NULL` when activating tickets
+   - Fix: Set `assignee_id = 'forge-agent'` in `activateTicketsForBuild()`
+
+2. **Secondary Issue (this subtask):** Tickets will stuck at `in_review` state
+   - Cause: No sentinel agent assignment after forge completes
+   - Fix: Add sentinel assignment logic after `setInReview()`
+
+### Next Steps
+
+1. **Phase 3 subtask-3-1:** Fix forge agent assignment (primary)
+2. **Phase 3 subtask-3-2:** Add sentinel agent assignment (secondary)
+3. Both fixes required for complete `ready → done` workflow
+
+---
+
 ## Summary
 
-**Root Cause:** Tickets are created in `ready` state without `assignee_id`, but the Engine filters for `assignee_id IS NOT NULL`.
+**Root Cause #1:** Tickets are created in `ready` state without `assignee_id`, but the Engine filters for `assignee_id IS NOT NULL`.
 
-**Impact:** No tickets are ever picked up by the Engine, causing complete workflow failure.
+**Root Cause #2:** No sentinel agent assignment logic exists for tickets that reach `in_review` state after forge agent completion.
 
-**Fix Complexity:** Low - Single line change in `activateTicketsForBuild()` function.
+**Impact:** No tickets are ever picked up by the Engine, and even if they were, they would stall at `in_review` state.
 
-**Secondary Issue:** Sentinel agent assignment logic is also missing, but fixing the primary issue will at least allow forge agent execution to proceed.
+**Fix Complexity:**
+- Primary (forge assignment): Low - Single line change in `activateTicketsForBuild()`
+- Secondary (sentinel assignment): Medium - Add sentinel assignment after `setInReview()` and potentially add sentinel polling

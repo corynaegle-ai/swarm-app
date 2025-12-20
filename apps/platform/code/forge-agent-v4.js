@@ -202,10 +202,11 @@ function formatAcceptanceCriteria(criteria) {
  * Process a ticket - main entry point
  */
 async function processTicket(ticket, projectSettings = {}) {
+  console.log('[FORGE] Processing ticket - processTicket() invoked', { ticketId: ticket?.id, title: ticket?.title });
   const model = projectSettings?.worker_model || MODEL_BY_SCOPE[ticket.estimated_scope] || CONFIG.claudeModel;
   const branchName = `forge/${ticket.id}-${Date.now()}`;
   let repoDir = null;
-  
+
   try {
     log.info('Processing ticket', { id: ticket.id, title: ticket.title, model });
     

@@ -22,54 +22,70 @@ router.get('/stats', async (req, res) => {
 });
 
 // POST /claim - Agent claims a ticket
+// Supports ticket_filter: 'ready' (default, forge agents) or 'in_review' (sentinel agents)
 router.post('/claim', async (req, res) => {
   try {
-    const { agent_id, vm_id, project_id } = req.body || {};
+    const { agent_id, vm_id, project_id, ticket_filter } = req.body || {};
     if (!agent_id) return res.status(400).json({ error: 'agent_id required' });
 
-    // Find claimable ticket with project info (ready state, not blocked)
+    // Determine which state to filter on
+    // - 'ready': forge agents claiming work (default)
+    // - 'in_review': sentinel agents claiming verification work
+    const targetState = ticket_filter === 'in_review' ? 'in_review' : 'ready';
+
+    // Find claimable ticket with project info
     let sql, params;
-    
+
     if (project_id) {
       sql = `
-        SELECT 
+        SELECT
           t.*,
           p.repo_url as project_repo_url,
           p.type as project_type,
           p.name as project_name
         FROM tickets t
         LEFT JOIN projects p ON t.project_id = p.id
-        WHERE t.state = 'ready' AND t.project_id = $1
+        WHERE t.state = $1 AND t.project_id = $2
         ORDER BY t.created_at ASC
         LIMIT 1
       `;
-      params = [project_id];
+      params = [targetState, project_id];
     } else {
       sql = `
-        SELECT 
+        SELECT
           t.*,
           p.repo_url as project_repo_url,
           p.type as project_type,
           p.name as project_name
         FROM tickets t
         LEFT JOIN projects p ON t.project_id = p.id
-        WHERE t.state = 'ready' 
-        ORDER BY 
-          CASE t.estimated_scope 
-            WHEN 'small' THEN 1 
-            WHEN 'medium' THEN 2 
-            WHEN 'large' THEN 3 
+        WHERE t.state = $1
+        ORDER BY
+          CASE t.estimated_scope
+            WHEN 'small' THEN 1
+            WHEN 'medium' THEN 2
+            WHEN 'large' THEN 3
           END,
           t.created_at ASC
         LIMIT 1
       `;
-      params = [];
+      params = [targetState];
     }
-    
+
     const ticket = await queryOne(sql, params);
     
     if (!ticket) return res.json({ ticket: null, message: 'No tickets available' });
-    
+
+    // Log state transition: ready/in_review → assigned
+    console.log('[state transition] /claim:', {
+      ticketId: ticket.id,
+      fromState: ticket.state,
+      toState: 'assigned',
+      agent_id,
+      ticket_filter: ticket_filter || 'ready',
+      timestamp: new Date().toISOString()
+    });
+
     // Extract project info before spreading ticket
     const project = {
       id: ticket.project_id,
@@ -144,6 +160,16 @@ router.post('/start', async (req, res) => {
     const { ticket_id, agent_id, branch_name } = req.body || {};
     if (!ticket_id) return res.status(400).json({ error: 'ticket_id required' });
 
+    // Log state transition: assigned → in_progress
+    console.log('[state transition] /start:', {
+      ticketId: ticket_id,
+      fromState: 'assigned',
+      toState: 'in_progress',
+      agent_id,
+      branch_name,
+      timestamp: new Date().toISOString()
+    });
+
     const result = await execute(`
       UPDATE tickets 
       SET state = 'in_progress', 
@@ -168,6 +194,17 @@ router.post('/complete', async (req, res) => {
   try {
     const { agent_id, ticket_id, pr_url, branch_name, files_involved, outputs } = req.body || {};
     if (!ticket_id) return res.status(400).json({ error: 'ticket_id required' });
+
+    // Log state transition: in_progress → in_review
+    console.log('[state transition] /complete:', {
+      ticketId: ticket_id,
+      fromState: 'in_progress',
+      toState: 'in_review',
+      agent_id,
+      pr_url,
+      branch_name,
+      timestamp: new Date().toISOString()
+    });
 
     await execute(`
       UPDATE tickets 

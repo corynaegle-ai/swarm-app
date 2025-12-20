@@ -197,11 +197,13 @@ export class SwarmEngine {
     
     /**
      * Set ticket to in_review (after PR created)
+     * Also assigns sentinel-agent for the review/completion phase
      */
     async setInReview(prUrl, evidence, ticketId) {
         await this.pgPool.query(`
-            UPDATE tickets 
+            UPDATE tickets
             SET state = 'in_review', pr_url = $1, verification_status = 'passed',
+                assignee_id = 'sentinel-agent', assignee_type = 'agent',
                 updated_at = NOW()
             WHERE id = $2
         `, [prUrl, ticketId]);

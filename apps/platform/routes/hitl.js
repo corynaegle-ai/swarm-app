@@ -397,7 +397,9 @@ router.post('/:sessionId/start-build', async (req, res) => {
     `, [session.tenant_id, req.params.sessionId]);
 
     const readyCount = await activateTicketsForBuild(req.params.sessionId);
-    
+
+    console.log(`[start-build] Ticket activation complete for session ${req.params.sessionId}: ${readyCount} tickets set to 'ready' state, assigned to forge-agent, awaiting Engine pickup`);
+
     // === STEP 5: Broadcast tickets generated ===
     broadcast.ticketsGenerated(req.params.sessionId, { tickets: ticketResult.tickets || [] });
     broadcast.buildProgress(req.params.sessionId, 95, 'Tickets queued for execution', { 
@@ -447,8 +449,15 @@ async function activateTicketsForBuild(sessionId) {
     }
     
     const newState = deps.length === 0 ? 'ready' : 'blocked';
+    // When setting to 'ready', also assign forge-agent so the Engine can find the ticket
+    // Engine polls with: WHERE state='ready' AND assignee_id IS NOT NULL AND assignee_type='agent'
     await execute(`
-      UPDATE tickets SET state = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND state = 'draft'
+      UPDATE tickets
+      SET state = $1,
+          assignee_id = CASE WHEN $1 = 'ready' THEN 'forge-agent' ELSE NULL END,
+          assignee_type = CASE WHEN $1 = 'ready' THEN 'agent' ELSE NULL END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2 AND state = 'draft'
     `, [newState, ticket.id]);
     
     if (newState === 'ready') readyCount++;

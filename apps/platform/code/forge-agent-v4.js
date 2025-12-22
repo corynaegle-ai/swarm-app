@@ -17,6 +17,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Activity logging for real-time dashboard
+const activity = require('../lib/activity-logger.js');
+
 // Configuration
 const CONFIG = {
   claudeModel: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
@@ -232,7 +235,7 @@ async function processTicket(ticket, projectSettings = {}) {
 
     // Step 5: Build prompt and call Claude
     const prompt = buildImplementationPrompt(ticket, enrichedRagContext, existingFiles);
-    const response = await callClaude([{ role: 'user', content: prompt }], model);
+    const response = await callClaude([{ role: 'user', content: prompt }], model, ticket.id);
     const result = parseCodeResponse(response);
 
     if (!result.files || result.files.length === 0) {
@@ -426,19 +429,35 @@ async function createPullRequest(ticket, branchName, summary) {
 // CLAUDE API
 // ============================================================================
 
-async function callClaude(messages, model = CONFIG.claudeModel) {
+async function callClaude(messages, model = CONFIG.claudeModel, ticketId = null) {
   const requestBody = {
     model,
     max_tokens: 4096,
     messages
   };
   
+  // Extract prompt preview for logging
+  const promptPreview = messages.map(m => m.content?.substring?.(0, 200) || '').join(' | ');
+  
+  // Log AI request with prompt
+  if (ticketId) {
+    await activity.logAiRequest(ticketId, model, promptPreview);
+  }
+  
   const response = await httpPost('https://api.anthropic.com/v1/messages', requestBody, {
     'x-api-key': CONFIG.claudeApiKey,
     'anthropic-version': '2023-06-01'
   });
   
-  return response.content?.[0]?.text || '';
+  const responseText = response.content?.[0]?.text || '';
+  const usage = response.usage || {};
+  
+  // Log AI response with usage stats
+  if (ticketId) {
+    await activity.logAiResponse(ticketId, model, responseText.substring(0, 500), usage);
+  }
+  
+  return responseText;
 }
 
 function parseCodeResponse(response) {

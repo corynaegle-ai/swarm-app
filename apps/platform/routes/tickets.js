@@ -789,7 +789,7 @@ router.post('/:id/activity', requireAgentAuth, async (req, res) => {
 // GET /api/tickets/:id/activity - Fetch activity log (user auth)
 router.get('/:id/activity', requireAuth, requireTenant, requirePermission('view_projects'), async (req, res) => {
   const { id } = req.params;
-  const tenantId = req.user.tenantId;
+  const tenantId = req.tenantId;
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const offset = parseInt(req.query.offset) || 0;
   
@@ -804,7 +804,7 @@ router.get('/:id/activity', requireAuth, requireTenant, requirePermission('view_
     }
     
     // Get activity events
-    const events = await query(`
+    const events = await queryAll(`
       SELECT event_type as category, actor_id, actor_type, 
              new_value as message, metadata, created_at as timestamp
       FROM ticket_events 

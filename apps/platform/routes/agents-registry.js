@@ -57,7 +57,7 @@ router.get('/agents', async (req, res) => {
     // Get total count
     const countSql = sql.replace(/SELECT .* FROM/, 'SELECT COUNT(*) as total FROM');
     const countResult = await pool.query(countSql, params);
-    const total = parseInt(countResult.rows[0].total);
+    const total = countResult.rows[0] ? parseInt(countResult.rows[0].total) : 0;
     
     // Add pagination
     sql += ` ORDER BY updated_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;

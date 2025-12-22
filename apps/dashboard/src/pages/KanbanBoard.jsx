@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import './KanbanBoard.css';
 import Sidebar from '../components/Sidebar';
 import useTickets from '../hooks/useTickets';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 const STATE_CONFIG = {
   draft: { label: 'Draft', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.15)' },
@@ -70,6 +71,22 @@ export default function KanbanBoard() {
       setRefreshing(false);
     }
   }, [listTickets, getProjects, filterProject]);
+
+  // WebSocket for real-time updates (replaces polling)
+  const handleTicketUpdate = useCallback((data) => {
+    console.log('[WS] Kanban ticket update:', data);
+    if (data.action) {
+      fetchData();  // Refresh on push notification
+    }
+  }, [fetchData]);
+
+  const { isConnected } = useWebSocket({
+    room: user?.tenant_id ? `tenant:${user.tenant_id}` : null,
+    handlers: {
+      'ticket:update': handleTicketUpdate
+    },
+    enabled: !!user?.tenant_id
+  });
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -161,7 +178,7 @@ export default function KanbanBoard() {
         {/* Header */}
         <div className="kanban-header">
           <div className="kanban-title">
-            <h2>📋 Kanban Board</h2>
+            <h2>📋 Kanban Board {isConnected && <span title="Live updates active">🟢</span>}</h2>
             <p>Drag and drop tickets between columns</p>
           </div>
           <div className="kanban-controls">

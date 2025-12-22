@@ -716,7 +716,6 @@ async function checkSessionCompletion(ticketId) {
 }
 
 // =============================================================================
-// =============================================================================
 // TICKET ACTIVITY LOGGING - Real-time agent activity
 // =============================================================================
 
@@ -744,8 +743,8 @@ router.post('/:id/activity', requireAgentAuth, async (req, res) => {
   }
   
   try {
-    // Verify ticket exists
-    const ticket = await queryOne('SELECT id, state FROM tickets WHERE id = $1', [id]);
+    // Verify ticket exists and get tenant_id for broadcast
+    const ticket = await queryOne('SELECT id, state, tenant_id FROM tickets WHERE id = $1', [id]);
     if (!ticket) {
       return res.status(404).json({ error: 'Ticket not found' });
     }
@@ -769,7 +768,7 @@ router.post('/:id/activity', requireAgentAuth, async (req, res) => {
     `, [id, category, agent_id, actorType, message, JSON.stringify(metadata)]);
     
     // Broadcast via WebSocket for real-time UI updates
-    broadcast('ticket_activity', {
+    broadcast.toTenant(ticket.tenant_id, 'ticket:activity', {
       ticket_id: id,
       entry: {
         timestamp: new Date().toISOString(),
@@ -788,73 +787,42 @@ router.post('/:id/activity', requireAgentAuth, async (req, res) => {
 });
 
 // GET /api/tickets/:id/activity - Fetch activity log (user auth)
-router.get('/:id/activity', requireAuth, async (req, res) => {
+router.get('/:id/activity', requireAuth, requireTenant, requirePermission('view_projects'), async (req, res) => {
   const { id } = req.params;
+  const tenantId = req.user.tenantId;
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  const category = req.query.category; // Optional filter
+  const offset = parseInt(req.query.offset) || 0;
   
   try {
-    // Build query with optional category filter
-    let sql = `
-      SELECT 
-        id,
-        created_at as timestamp,
-        event_type as category,
-        actor_id,
-        actor_type,
-        new_value as message,
-        metadata
-      FROM ticket_events
-      WHERE ticket_id = $1
-    `;
-    const params = [id];
-    let paramIdx = 2;
-    
-    if (category) {
-      sql += ` AND event_type = $${paramIdx++}`;
-      params.push(category);
-    }
-    
-    sql += ` ORDER BY created_at DESC LIMIT $${paramIdx}`;
-    params.push(limit);
-    
-    const events = await queryAll(sql, params);
-    
-    // Get current agent if ticket is in progress
-    const ticket = await queryOne(`
-      SELECT t.id, t.state, t.title,
-             ai.id as agent_instance_id, ai.agent_type, ai.vm_id, ai.status as agent_status
-      FROM tickets t
-      LEFT JOIN agent_instances ai ON ai.ticket_id = t.id AND ai.status = 'running'
-      WHERE t.id = $1
-    `, [id]);
-    
+    // Verify ticket exists and belongs to tenant
+    const ticket = await queryOne(
+      'SELECT id FROM tickets WHERE id = $1 AND tenant_id = $2', 
+      [id, tenantId]
+    );
     if (!ticket) {
       return res.status(404).json({ error: 'Ticket not found' });
     }
     
-    const currentAgent = ticket.agent_instance_id ? {
-      id: `${ticket.agent_type}-${ticket.agent_instance_id}`,
-      type: ticket.agent_type,
-      instance_id: ticket.agent_instance_id,
-      vm_id: ticket.vm_id,
-      status: ticket.agent_status
-    } : null;
+    // Get activity events
+    const events = await query(`
+      SELECT event_type as category, actor_id, actor_type, 
+             new_value as message, metadata, created_at as timestamp
+      FROM ticket_events 
+      WHERE ticket_id = $1 
+      ORDER BY created_at DESC 
+      LIMIT $2 OFFSET $3
+    `, [id, limit, offset]);
     
-    res.json({
-      ticket_id: id,
-      ticket_state: ticket.state,
-      current_agent: currentAgent,
-      entries: events.map(e => ({
-        id: e.id,
-        timestamp: e.timestamp,
-        category: e.category,
-        actor: { id: e.actor_id, type: e.actor_type },
-        message: e.message,
-        metadata: e.metadata || {}
-      })),
-      count: events.length
-    });
+    // Format response
+    const activity = events.map(e => ({
+      timestamp: e.timestamp,
+      category: e.category,
+      actor: { id: e.actor_id, type: e.actor_type },
+      message: e.message,
+      metadata: typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata
+    }));
+    
+    res.json({ ticket_id: id, activity, limit, offset });
   } catch (err) {
     console.error('GET /tickets/:id/activity error:', err);
     res.status(500).json({ error: 'Internal server error' });

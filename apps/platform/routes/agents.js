@@ -1,6 +1,7 @@
 /**
  * Agent management routes - PostgreSQL version
  * Provides /api/agents/* endpoints for agent monitoring
+ * Table: agent_instances (not agents)
  */
 
 const express = require('express');
@@ -23,7 +24,7 @@ router.get('/', async (req, res) => {
         t.title as ticket_title,
         t.state as ticket_state,
         p.name as project_name
-      FROM agents a
+      FROM agent_instances a
       LEFT JOIN tickets t ON a.ticket_id = t.id
       LEFT JOIN projects p ON t.project_id = p.id
       WHERE a.tenant_id = $1
@@ -48,7 +49,7 @@ router.get('/active', async (req, res) => {
         t.title as ticket_title,
         t.state as ticket_state,
         p.name as project_name
-      FROM agents a
+      FROM agent_instances a
       LEFT JOIN tickets t ON a.ticket_id = t.id
       LEFT JOIN projects p ON t.project_id = p.id
       WHERE a.tenant_id = $1
@@ -69,17 +70,17 @@ router.get('/stats', async (req, res) => {
     const tenantId = req.tenantId;
     
     const stats = await queryAll(`
-      SELECT status, COUNT(*)::int as count FROM agents WHERE tenant_id = $1 GROUP BY status
+      SELECT status, COUNT(*)::int as count FROM agent_instances WHERE tenant_id = $1 GROUP BY status
     `, [tenantId]);
     
     const byType = await queryAll(`
-      SELECT agent_type, COUNT(*)::int as count FROM agents WHERE tenant_id = $1 GROUP BY agent_type
+      SELECT agent_type, COUNT(*)::int as count FROM agent_instances WHERE tenant_id = $1 GROUP BY agent_type
     `, [tenantId]);
     
-    const total = await queryOne(`SELECT COUNT(*)::int as total FROM agents WHERE tenant_id = $1`, [tenantId]);
+    const total = await queryOne(`SELECT COUNT(*)::int as total FROM agent_instances WHERE tenant_id = $1`, [tenantId]);
     
     res.json({ 
-      total: total.total,
+      total: total?.total || 0,
       byStatus: stats.reduce((acc, s) => { acc[s.status] = s.count; return acc; }, {}),
       byType: byType.reduce((acc, t) => { acc[t.agent_type] = t.count; return acc; }, {})
     });
@@ -103,7 +104,7 @@ router.get('/:id', async (req, res) => {
         t.description as ticket_description,
         p.name as project_name,
         p.repo_url
-      FROM agents a
+      FROM agent_instances a
       LEFT JOIN tickets t ON a.ticket_id = t.id
       LEFT JOIN projects p ON t.project_id = p.id
       WHERE a.id = $1 AND a.tenant_id = $2
@@ -124,7 +125,7 @@ router.get('/:id/heartbeats', async (req, res) => {
     const { id } = req.params;
     const limit = parseInt(req.query.limit) || 50;
     
-    const agent = await queryOne(`SELECT id FROM agents WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+    const agent = await queryOne(`SELECT id FROM agent_instances WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
     
     const heartbeats = await queryAll(`
@@ -145,7 +146,7 @@ router.get('/:id/events', async (req, res) => {
     const { id } = req.params;
     const limit = parseInt(req.query.limit) || 50;
     
-    const agent = await queryOne(`SELECT ticket_id FROM agents WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+    const agent = await queryOne(`SELECT ticket_id FROM agent_instances WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
     if (!agent.ticket_id) return res.json({ events: [], count: 0 });
     
@@ -166,10 +167,10 @@ router.post('/:id/terminate', async (req, res) => {
     const tenantId = req.tenantId;
     const { id } = req.params;
     
-    const agent = await queryOne(`SELECT * FROM agents WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+    const agent = await queryOne(`SELECT * FROM agent_instances WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
     
-    await execute(`UPDATE agents SET status = 'terminated', completed_at = CURRENT_TIMESTAMP WHERE id = $1`, [id]);
+    await execute(`UPDATE agent_instances SET status = 'terminated', completed_at = CURRENT_TIMESTAMP WHERE id = $1`, [id]);
     
     // If agent has a VM, try to kill it
     if (agent.vm_id) {
@@ -195,7 +196,7 @@ router.get('/:id/logs', async (req, res) => {
     const tail = req.query.tail === 'true';
     
     const agent = await queryOne(`
-      SELECT id, ticket_id, vm_id, status FROM agents WHERE id = $1 AND tenant_id = $2
+      SELECT id, ticket_id, vm_id, status FROM agent_instances WHERE id = $1 AND tenant_id = $2
     `, [id, tenantId]);
     
     if (!agent) return res.status(404).json({ error: 'Agent not found' });

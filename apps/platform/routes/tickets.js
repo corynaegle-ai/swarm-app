@@ -716,6 +716,150 @@ async function checkSessionCompletion(ticketId) {
 }
 
 // =============================================================================
+// =============================================================================
+// TICKET ACTIVITY LOGGING - Real-time agent activity
+// =============================================================================
+
+// Agent service key for internal agent calls
+const AGENT_SERVICE_KEY = process.env.AGENT_SERVICE_KEY || 'agent-internal-key-dev';
+
+// Middleware: Agent service auth (for POST)
+function requireAgentAuth(req, res, next) {
+  const serviceKey = req.headers['x-agent-key'] || req.headers.authorization?.replace('Bearer ', '');
+  if (serviceKey === AGENT_SERVICE_KEY) {
+    req.isAgent = true;
+    return next();
+  }
+  return res.status(401).json({ error: 'Invalid agent key' });
+}
+
+// POST /api/tickets/:id/activity - Log agent activity (agent auth)
+router.post('/:id/activity', requireAgentAuth, async (req, res) => {
+  const { id } = req.params;
+  const { agent_id, category, message, metadata = {} } = req.body;
+  
+  // Validate required fields
+  if (!agent_id || !category || !message) {
+    return res.status(400).json({ error: 'agent_id, category, message required' });
+  }
+  
+  try {
+    // Verify ticket exists
+    const ticket = await queryOne('SELECT id, state FROM tickets WHERE id = $1', [id]);
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    // Map agent_id prefix to valid actor_type (per DB constraint)
+    const agentPrefix = agent_id.split('-')[0].toLowerCase();
+    const actorTypeMap = {
+      'design': 'design_agent',
+      'worker': 'worker_agent', 
+      'forge': 'worker_agent',
+      'review': 'review_agent',
+      'orchestrator': 'orchestrator',
+      'system': 'system'
+    };
+    const actorType = actorTypeMap[agentPrefix] || 'worker_agent';
+    
+    // Insert activity into ticket_events
+    await execute(`
+      INSERT INTO ticket_events (ticket_id, event_type, actor_id, actor_type, new_value, metadata)
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `, [id, category, agent_id, actorType, message, JSON.stringify(metadata)]);
+    
+    // Broadcast via WebSocket for real-time UI updates
+    broadcast('ticket_activity', {
+      ticket_id: id,
+      entry: {
+        timestamp: new Date().toISOString(),
+        category,
+        actor: { id: agent_id, type: actorType },
+        message,
+        metadata
+      }
+    });
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error('POST /tickets/:id/activity error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/tickets/:id/activity - Fetch activity log (user auth)
+router.get('/:id/activity', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const category = req.query.category; // Optional filter
+  
+  try {
+    // Build query with optional category filter
+    let sql = `
+      SELECT 
+        id,
+        created_at as timestamp,
+        event_type as category,
+        actor_id,
+        actor_type,
+        new_value as message,
+        metadata
+      FROM ticket_events
+      WHERE ticket_id = $1
+    `;
+    const params = [id];
+    let paramIdx = 2;
+    
+    if (category) {
+      sql += ` AND event_type = $${paramIdx++}`;
+      params.push(category);
+    }
+    
+    sql += ` ORDER BY created_at DESC LIMIT $${paramIdx}`;
+    params.push(limit);
+    
+    const events = await queryAll(sql, params);
+    
+    // Get current agent if ticket is in progress
+    const ticket = await queryOne(`
+      SELECT t.id, t.state, t.title,
+             ai.id as agent_instance_id, ai.agent_type, ai.vm_id, ai.status as agent_status
+      FROM tickets t
+      LEFT JOIN agent_instances ai ON ai.ticket_id = t.id AND ai.status = 'running'
+      WHERE t.id = $1
+    `, [id]);
+    
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    const currentAgent = ticket.agent_instance_id ? {
+      id: `${ticket.agent_type}-${ticket.agent_instance_id}`,
+      type: ticket.agent_type,
+      instance_id: ticket.agent_instance_id,
+      vm_id: ticket.vm_id,
+      status: ticket.agent_status
+    } : null;
+    
+    res.json({
+      ticket_id: id,
+      ticket_state: ticket.state,
+      current_agent: currentAgent,
+      entries: events.map(e => ({
+        id: e.id,
+        timestamp: e.timestamp,
+        category: e.category,
+        actor: { id: e.actor_id, type: e.actor_type },
+        message: e.message,
+        metadata: e.metadata || {}
+      })),
+      count: events.length
+    });
+  } catch (err) {
+    console.error('GET /tickets/:id/activity error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 // HELPER FUNCTIONS
 // =============================================================================
 

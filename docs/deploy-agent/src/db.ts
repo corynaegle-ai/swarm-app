@@ -1,215 +1,215 @@
-/**
- * Database - SQLite storage for deployments and queue
- */
-
-import Database from 'better-sqlite3';
-import { logger } from './logger';
+import { Database } from 'sqlite3';
+import { promisify } from 'util';
+import path from 'path';
+import fs from 'fs';
 
 export class DeploymentDB {
-  private db: Database.Database;
-  
-  constructor(dbPath: string) {
+  private db: Database;
+  private dbPath: string;
+
+  constructor(dbPath: string = './deployment.db') {
+    this.dbPath = dbPath;
     this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
   }
-  
-  async initialize(): Promise<void> {
-    this.db.exec(`
-      -- Deployments table
+
+  async initializeDatabase(): Promise<void> {
+    const run = promisify(this.db.run.bind(this.db));
+
+    // Create tickets table
+    await run(`
+      CREATE TABLE IF NOT EXISTS tickets (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT,
+        status TEXT DEFAULT 'open',
+        priority TEXT DEFAULT 'medium',
+        assignee TEXT,
+        reporter TEXT,
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+        updated_at INTEGER DEFAULT (strftime('%s', 'now')),
+        labels TEXT,
+        project TEXT
+      )
+    `);
+
+    // Create deployments table
+    await run(`
       CREATE TABLE IF NOT EXISTS deployments (
         id TEXT PRIMARY KEY,
-        service TEXT NOT NULL,
-        commit_sha TEXT NOT NULL,
-        triggered_by TEXT NOT NULL,
-        trigger_type TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        completed_at TEXT,
-        build_log TEXT,
-        deploy_log TEXT,
-        health_check_result TEXT,
-        rollback_reason TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      );
-      
-      -- Deployment events for audit trail
-      CREATE TABLE IF NOT EXISTS deployment_events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        deployment_id TEXT NOT NULL,
-        stage TEXT NOT NULL,
-        status TEXT NOT NULL,
-        message TEXT,
-        details TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (deployment_id) REFERENCES deployments(id)
-      );
-      
-      -- Deploy queue for ticket-aware deployments
-      CREATE TABLE IF NOT EXISTS deploy_queue (
+        ticket_id TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        environment TEXT NOT NULL,
+        branch TEXT,
+        commit_hash TEXT,
+        deployed_at INTEGER,
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+        updated_at INTEGER DEFAULT (strftime('%s', 'now')),
+        logs TEXT,
+        FOREIGN KEY (ticket_id) REFERENCES tickets(id)
+      )
+    `);
+
+    // Create ticket_comments table
+    await run(`
+      CREATE TABLE IF NOT EXISTS ticket_comments (
         id TEXT PRIMARY KEY,
         ticket_id TEXT NOT NULL,
-        parent_ticket_id TEXT,
-        commit_sha TEXT NOT NULL,
-        repo TEXT NOT NULL,
-        service TEXT NOT NULL,
-        pr_number INTEGER,
-        status TEXT DEFAULT 'waiting',
-        waiting_for TEXT,
-        queued_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        deployed_at TEXT
-      );
-      
-      -- Track which commits belong to which tickets
-      CREATE TABLE IF NOT EXISTS commit_ticket_map (
-        commit_sha TEXT PRIMARY KEY,
-        ticket_id TEXT NOT NULL,
-        repo TEXT NOT NULL,
-        pr_number INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      );
-      
-      CREATE INDEX IF NOT EXISTS idx_deployments_service ON deployments(service);
-      CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status);
-      CREATE INDEX IF NOT EXISTS idx_events_deployment ON deployment_events(deployment_id);
-      CREATE INDEX IF NOT EXISTS idx_queue_status ON deploy_queue(status);
-      CREATE INDEX IF NOT EXISTS idx_queue_parent ON deploy_queue(parent_ticket_id);
-      CREATE INDEX IF NOT EXISTS idx_commit_ticket ON commit_ticket_map(ticket_id);
+        author TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+        updated_at INTEGER DEFAULT (strftime('%s', 'now')),
+        FOREIGN KEY (ticket_id) REFERENCES tickets(id)
+      )
     `);
+
+    // Create indexes for tickets
+    await run('CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status)');
+    await run('CREATE INDEX IF NOT EXISTS idx_tickets_assignee ON tickets(assignee)');
+    await run('CREATE INDEX IF NOT EXISTS idx_tickets_created ON tickets(created_at)');
+
+    // Create indexes for deployments
+    await run('CREATE INDEX IF NOT EXISTS idx_deployments_ticket ON deployments(ticket_id)');
+    await run('CREATE INDEX IF NOT EXISTS idx_deployments_status ON deployments(status)');
+    await run('CREATE INDEX IF NOT EXISTS idx_deployments_created ON deployments(created_at)');
+
+    // Create indexes for ticket_comments
+    await run('CREATE INDEX IF NOT EXISTS idx_ticket_comments_ticket ON ticket_comments(ticket_id)');
+    await run('CREATE INDEX IF NOT EXISTS idx_ticket_comments_created ON ticket_comments(created_at)');
+  }
+
+  async close(): Promise<void> {
+    const close = promisify(this.db.close.bind(this.db));
+    await close();
+  }
+
+  async createTicket(ticket: any): Promise<string> {
+    const run = promisify(this.db.run.bind(this.db));
+    const id = `TKT-${Date.now().toString(36).toUpperCase()}`;
     
-    logger.info('Database initialized');
+    await run(
+      `INSERT INTO tickets (id, title, description, status, priority, assignee, reporter, labels, project) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [ticket.title, ticket.description, ticket.status || 'open', ticket.priority || 'medium', 
+       ticket.assignee, ticket.reporter, JSON.stringify(ticket.labels || []), ticket.project]
+    );
+    
+    return id;
   }
-  
-  // === Deployment Operations ===
-  
-  createDeployment(deployment: {
-    id: string;
-    service: string;
-    commit_sha: string;
-    triggered_by: string;
-    trigger_type: string;
-    status: string;
-  }): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO deployments (id, service, commit_sha, triggered_by, trigger_type, status)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(deployment.id, deployment.service, deployment.commit_sha, 
-             deployment.triggered_by, deployment.trigger_type, deployment.status);
-  }
-  
-  updateDeploymentStatus(id: string, status: string): void {
-    const stmt = this.db.prepare('UPDATE deployments SET status = ? WHERE id = ?');
-    stmt.run(status, id);
-  }
-  
-  completeDeployment(id: string): void {
-    const stmt = this.db.prepare('UPDATE deployments SET completed_at = CURRENT_TIMESTAMP WHERE id = ?');
-    stmt.run(id);
-  }
-  
-  setRollbackReason(id: string, reason: string): void {
-    const stmt = this.db.prepare('UPDATE deployments SET rollback_reason = ?, status = ? WHERE id = ?');
-    stmt.run(reason, 'rolled_back', id);
-  }
-  
-  addDeploymentEvent(deploymentId: string, stage: string, status: string, message: string, details?: string): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO deployment_events (deployment_id, stage, status, message, details)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    stmt.run(deploymentId, stage, status, message, details || null);
-  }
-  
-  getDeployment(id: string): any {
-    const deployment = this.db.prepare('SELECT * FROM deployments WHERE id = ?').get(id);
-    if (deployment) {
-      const events = this.db.prepare('SELECT * FROM deployment_events WHERE deployment_id = ? ORDER BY created_at').all(id);
-      return { ...deployment, events };
+
+  async getTickets(filters: any = {}): Promise<any[]> {
+    const all = promisify(this.db.all.bind(this.db));
+    let query = 'SELECT * FROM tickets';
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    if (filters.status) {
+      conditions.push('status = ?');
+      params.push(filters.status);
     }
-    return null;
+    
+    if (filters.assignee) {
+      conditions.push('assignee = ?');
+      params.push(filters.assignee);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY created_at DESC';
+    
+    const tickets = await all(query, params);
+    return tickets.map(ticket => ({
+      ...ticket,
+      labels: JSON.parse(ticket.labels || '[]')
+    }));
   }
-  
-  listDeployments(limit: number = 50): any[] {
-    return this.db.prepare('SELECT * FROM deployments ORDER BY created_at DESC LIMIT ?').all(limit);
+
+  async createDeployment(deployment: any): Promise<string> {
+    const run = promisify(this.db.run.bind(this.db));
+    const id = `DEP-${Date.now().toString(36).toUpperCase()}`;
+    
+    await run(
+      `INSERT INTO deployments (id, ticket_id, status, environment, branch, commit_hash) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, deployment.ticket_id, deployment.status || 'pending', deployment.environment,
+       deployment.branch, deployment.commit_hash]
+    );
+    
+    return id;
   }
-  
-  // === Queue Operations ===
-  
-  addToQueue(item: {
-    id: string;
-    ticket_id: string;
-    parent_ticket_id: string | null;
-    commit_sha: string;
-    repo: string;
-    service: string;
-    pr_number?: number;
-    waiting_for: string[];
-  }): void {
-    const stmt = this.db.prepare(`
-      INSERT INTO deploy_queue (id, ticket_id, parent_ticket_id, commit_sha, repo, service, pr_number, waiting_for)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      item.id, 
-      item.ticket_id, 
-      item.parent_ticket_id, 
-      item.commit_sha, 
-      item.repo, 
-      item.service,
-      item.pr_number || null,
-      JSON.stringify(item.waiting_for)
+
+  async getDeployments(filters: any = {}): Promise<any[]> {
+    const all = promisify(this.db.all.bind(this.db));
+    let query = 'SELECT * FROM deployments';
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    if (filters.ticket_id) {
+      conditions.push('ticket_id = ?');
+      params.push(filters.ticket_id);
+    }
+    
+    if (filters.status) {
+      conditions.push('status = ?');
+      params.push(filters.status);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY created_at DESC';
+    
+    return await all(query, params);
+  }
+
+  async createComment(comment: any): Promise<string> {
+    const run = promisify(this.db.run.bind(this.db));
+    const id = `CMT-${Date.now().toString(36).toUpperCase()}`;
+    
+    await run(
+      `INSERT INTO ticket_comments (id, ticket_id, author, content) 
+       VALUES (?, ?, ?, ?)`,
+      [id, comment.ticket_id, comment.author, comment.content]
+    );
+    
+    return id;
+  }
+
+  async getComments(ticket_id: string): Promise<any[]> {
+    const all = promisify(this.db.all.bind(this.db));
+    return await all(
+      'SELECT * FROM ticket_comments WHERE ticket_id = ? ORDER BY created_at ASC',
+      [ticket_id]
     );
   }
-  
-  getQueuedByParent(parentTicketId: string): any[] {
-    return this.db.prepare(`
-      SELECT * FROM deploy_queue 
-      WHERE parent_ticket_id = ? AND status = 'waiting'
-      ORDER BY queued_at ASC
-    `).all(parentTicketId);
+
+  async updateTicketStatus(id: string, status: string): Promise<void> {
+    const run = promisify(this.db.run.bind(this.db));
+    await run(
+      'UPDATE tickets SET status = ?, updated_at = strftime(\'%s\', \'now\') WHERE id = ?',
+      [status, id]
+    );
   }
-  
-  getQueuedWaitingFor(ticketId: string): any[] {
-    return this.db.prepare(`
-      SELECT * FROM deploy_queue 
-      WHERE status = 'waiting' 
-      AND waiting_for LIKE ?
-    `).all(`%${ticketId}%`);
-  }
-  
-  updateQueueStatus(id: string, status: string): void {
-    const stmt = this.db.prepare(`
-      UPDATE deploy_queue 
-      SET status = ?, deployed_at = CASE WHEN ? = 'deployed' THEN CURRENT_TIMESTAMP ELSE deployed_at END
-      WHERE id = ?
-    `);
-    stmt.run(status, status, id);
-  }
-  
-  getQueueItem(id: string): any {
-    return this.db.prepare('SELECT * FROM deploy_queue WHERE id = ?').get(id);
-  }
-  
-  listQueue(status?: string): any[] {
-    if (status) {
-      return this.db.prepare('SELECT * FROM deploy_queue WHERE status = ? ORDER BY queued_at DESC').all(status);
+
+  async updateDeploymentStatus(id: string, status: string, logs?: string): Promise<void> {
+    const run = promisify(this.db.run.bind(this.db));
+    const params = [status];
+    let query = 'UPDATE deployments SET status = ?';
+    
+    if (status === 'deployed') {
+      query += ', deployed_at = strftime(\'%s\', \'now\')';
     }
-    return this.db.prepare('SELECT * FROM deploy_queue ORDER BY queued_at DESC LIMIT 100').all();
-  }
-  
-  // === Commit-Ticket Mapping ===
-  
-  mapCommitToTicket(commitSha: string, ticketId: string, repo: string, prNumber?: number): void {
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO commit_ticket_map (commit_sha, ticket_id, repo, pr_number)
-      VALUES (?, ?, ?, ?)
-    `);
-    stmt.run(commitSha, ticketId, repo, prNumber || null);
-  }
-  
-  getTicketForCommit(commitSha: string): any {
-    return this.db.prepare('SELECT * FROM commit_ticket_map WHERE commit_sha = ?').get(commitSha);
+    
+    if (logs) {
+      query += ', logs = ?';
+      params.push(logs);
+    }
+    
+    query += ', updated_at = strftime(\'%s\', \'now\') WHERE id = ?';
+    params.push(id);
+    
+    await run(query, params);
   }
 }
-
-export { DeploymentDB as Database };

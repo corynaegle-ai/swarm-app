@@ -18,6 +18,7 @@ import LearningDashboard from './pages/LearningDashboard';
 import AgentDetail from './pages/AgentDetail';
 import SignIn from './pages/SignIn';
 import McpFactory from './pages/McpFactory';
+import Backlog from './pages/Backlog';
 import './App.css';
 import './layout.css';
 import './agent-catalog.css';
@@ -102,6 +103,11 @@ function App() {
           <Route path="/learning" element={
             <ProtectedRoute>
               <LearningDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="/backlog" element={
+            <ProtectedRoute>
+              <Backlog />
             </ProtectedRoute>
           } />
           <Route path="/mcp-factory" element={

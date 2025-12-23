@@ -13,6 +13,7 @@ import {
   LogOut,
   Brain,
   Wand2,
+  Lightbulb,
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -27,6 +28,7 @@ export default function Sidebar() {
     { to: '/agents/catalog', icon: Layers, label: 'Catalog' },
     { to: '/vms', icon: Server, label: 'VMs' },
     { to: '/learning', icon: Brain, label: 'Learning' },
+    { to: '/backlog', icon: Lightbulb, label: 'Backlog' },
     { to: '/mcp-factory', icon: Wand2, label: 'MCP Factory' },
     { to: '/projects/new', icon: FolderPlus, label: 'New Project' },
   ];

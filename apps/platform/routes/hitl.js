@@ -454,7 +454,7 @@ async function activateTicketsForBuild(sessionId) {
     await execute(`
       UPDATE tickets
       SET state = $1,
-          assignee_id = CASE WHEN $1 = 'ready' THEN 'forge-agent' ELSE NULL END,
+          assignee_id = CASE WHEN $1 = 'ready' THEN 'forge' ELSE NULL END,
           assignee_type = CASE WHEN $1 = 'ready' THEN 'agent' ELSE NULL END,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $2 AND state = 'draft'

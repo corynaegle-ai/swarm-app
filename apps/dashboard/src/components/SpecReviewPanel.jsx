@@ -1,580 +1,219 @@
-/**
- * SpecReviewPanel - Full spec card display with edit mode
- * Phase 6 of HITL Implementation
- */
-import { useState, useEffect } from 'react';
-import './SpecReviewPanel.css';
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Clock, AlertCircle, CheckCircle } from 'lucide-react';
 
-// Priority badge colors
+// Updated priority colors to match ticket system PRIORITY_CONFIG
 const PRIORITY_COLORS = {
-  high: '#ff4444',
-  medium: '#ffa500',
-  low: '#00d4ff'
+  'Critical': 'bg-red-500 text-white',
+  'High': 'bg-orange-500 text-white',
+  'Medium': 'bg-yellow-500 text-black',
+  'Low': 'bg-green-500 text-white'
 };
 
-export default function SpecReviewPanel({ 
-  spec, 
-  onSave, 
-  onApprove, 
-  onRequestRevision, 
-  loading = false 
-}) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedSpec, setEditedSpec] = useState(spec);
-  const [showRevisionInput, setShowRevisionInput] = useState(false);
-  const [revisionFeedback, setRevisionFeedback] = useState('');
-  const [activeTab, setActiveTab] = useState('overview');
+const STATUS_COLORS = {
+  'pending': 'bg-yellow-100 text-yellow-800',
+  'in-review': 'bg-blue-100 text-blue-800',
+  'approved': 'bg-green-100 text-green-800',
+  'rejected': 'bg-red-100 text-red-800'
+};
 
-  // Sync editedSpec when spec prop changes
+const STATUS_ICONS = {
+  'pending': Clock,
+  'in-review': AlertCircle,
+  'approved': CheckCircle,
+  'rejected': AlertCircle
+};
+
+export default function SpecReviewPanel({ specs = [], onReview, onApprove, onReject }) {
+  const [selectedSpec, setSelectedSpec] = useState(null);
+  const [reviewComment, setReviewComment] = useState('');
+  const [filteredSpecs, setFilteredSpecs] = useState(specs);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+
   useEffect(() => {
-    setEditedSpec(spec);
-  }, [spec]);
+    let filtered = specs;
+    
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(spec => spec.status === statusFilter);
+    }
+    
+    if (priorityFilter !== 'all') {
+      filtered = filtered.filter(spec => spec.priority === priorityFilter);
+    }
+    
+    setFilteredSpecs(filtered);
+  }, [specs, statusFilter, priorityFilter]);
 
-  const handleSave = async () => {
-    await onSave(editedSpec);
-    setIsEditing(false);
+  const handleReviewSubmit = (action) => {
+    if (!selectedSpec) return;
+    
+    const reviewData = {
+      specId: selectedSpec.id,
+      action,
+      comment: reviewComment,
+      timestamp: new Date().toISOString()
+    };
+    
+    switch (action) {
+      case 'approve':
+        onApprove?.(reviewData);
+        break;
+      case 'reject':
+        onReject?.(reviewData);
+        break;
+      default:
+        onReview?.(reviewData);
+    }
+    
+    setSelectedSpec(null);
+    setReviewComment('');
   };
 
-  const handleCancel = () => {
-    setEditedSpec(spec);
-    setIsEditing(false);
+  const getPriorityBadgeClass = (priority) => {
+    return PRIORITY_COLORS[priority] || 'bg-gray-500 text-white';
   };
 
-  const handleRevisionSubmit = async () => {
-    if (!revisionFeedback.trim()) return;
-    await onRequestRevision(revisionFeedback.trim());
-    setRevisionFeedback('');
-    setShowRevisionInput(false);
+  const getStatusBadgeClass = (status) => {
+    return STATUS_COLORS[status] || 'bg-gray-100 text-gray-800';
   };
 
-  // Update a simple field
-  const updateField = (field, value) => {
-    setEditedSpec(prev => ({ ...prev, [field]: value }));
+  const getStatusIcon = (status) => {
+    return STATUS_ICONS[status] || Clock;
   };
-
-  // Update nested field
-  const updateNested = (parent, field, value) => {
-    setEditedSpec(prev => ({
-      ...prev,
-      [parent]: { ...prev[parent], [field]: value }
-    }));
-  };
-
-  // Update array item
-  const updateArrayItem = (arrayName, index, field, value) => {
-    setEditedSpec(prev => ({
-      ...prev,
-      [arrayName]: prev[arrayName].map((item, i) => 
-        i === index ? (field ? { ...item, [field]: value } : value) : item
-      )
-    }));
-  };
-
-  // Add/remove array items
-  const addArrayItem = (arrayName, template) => {
-    setEditedSpec(prev => ({
-      ...prev,
-      [arrayName]: [...(prev[arrayName] || []), template]
-    }));
-  };
-
-  const removeArrayItem = (arrayName, index) => {
-    setEditedSpec(prev => ({
-      ...prev,
-      [arrayName]: prev[arrayName].filter((_, i) => i !== index)
-    }));
-  };
-
-  if (!spec) {
-    return (
-      <div className="spec-review-panel empty">
-        <span className="empty-icon">📋</span>
-        <p>No specification generated yet</p>
-      </div>
-    );
-  }
-
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: '📋' },
-    { id: 'features', label: 'Features', icon: '✨' },
-    { id: 'technical', label: 'Technical', icon: '⚙️' },
-    { id: 'constraints', label: 'Constraints', icon: '📏' }
-  ];
 
   return (
-    <div className="spec-review-panel glass-card">
-      {/* Header */}
-      <div className="spec-header">
-        <div className="spec-title-row">
-          <h2>{isEditing ? 'Edit Specification' : 'Review Specification'}</h2>
-          <div className="header-actions">
-            {!isEditing ? (
-              <button 
-                onClick={() => setIsEditing(true)}
-                className="edit-btn"
-                disabled={loading}
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Specification Review Panel</CardTitle>
+          <div className="flex gap-4">
+            <div>
+              <label className="text-sm font-medium">Status Filter:</label>
+              <select 
+                value={statusFilter} 
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="ml-2 px-2 py-1 border rounded"
               >
-                ✏️ Edit
-              </button>
-            ) : (
-              <>
-                <button onClick={handleCancel} className="cancel-btn">Cancel</button>
-                <button onClick={handleSave} className="save-btn" disabled={loading}>
-                  {loading ? '...' : '💾 Save'}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Tab navigation */}
-        <div className="spec-tabs">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              className={`spec-tab ${activeTab === tab.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              <span>{tab.icon}</span> {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab Content */}
-      <div className="spec-content">
-        {/* Overview Tab */}
-        {activeTab === 'overview' && (
-          <div className="tab-content overview-tab">
-            {/* Title */}
-            <div className="spec-field">
-              <label>Project Title</label>
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editedSpec.title || ''}
-                  onChange={(e) => updateField('title', e.target.value)}
-                  className="spec-input"
-                />
-              ) : (
-                <h3 className="spec-title">{spec.title}</h3>
-              )}
+                <option value="all">All</option>
+                <option value="pending">Pending</option>
+                <option value="in-review">In Review</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
             </div>
-
-            {/* Summary */}
-            <div className="spec-field">
-              <label>Summary</label>
-              {isEditing ? (
-                <textarea
-                  value={editedSpec.summary || ''}
-                  onChange={(e) => updateField('summary', e.target.value)}
-                  className="spec-textarea"
-                  rows={3}
-                />
-              ) : (
-                <p className="spec-summary">{spec.summary}</p>
-              )}
-            </div>
-
-            {/* Goals */}
-            <div className="spec-field">
-              <label>Goals</label>
-              {isEditing ? (
-                <div className="editable-list">
-                  {(editedSpec.goals || []).map((goal, i) => (
-                    <div key={i} className="list-item-edit">
-                      <input
-                        type="text"
-                        value={goal}
-                        onChange={(e) => updateArrayItem('goals', i, null, e.target.value)}
-                        className="spec-input"
-                      />
-                      <button 
-                        onClick={() => removeArrayItem('goals', i)}
-                        className="remove-btn"
-                      >×</button>
-                    </div>
-                  ))}
-                  <button 
-                    onClick={() => addArrayItem('goals', '')}
-                    className="add-btn"
-                  >+ Add Goal</button>
-                </div>
-              ) : (
-                <ul className="spec-list">
-                  {(spec.goals || []).map((goal, i) => (
-                    <li key={i}>{goal}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Users */}
-            <div className="spec-field">
-              <label>Target Users</label>
-              {isEditing ? (
-                <div className="users-edit">
-                  <div className="user-field">
-                    <span>Primary:</span>
-                    <input
-                      type="text"
-                      value={editedSpec.users?.primary || ''}
-                      onChange={(e) => updateNested('users', 'primary', e.target.value)}
-                      className="spec-input"
-                    />
-                  </div>
-                  <div className="user-field">
-                    <span>Secondary:</span>
-                    <input
-                      type="text"
-                      value={editedSpec.users?.secondary || ''}
-                      onChange={(e) => updateNested('users', 'secondary', e.target.value)}
-                      className="spec-input"
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div className="users-display">
-                  {spec.users?.primary && (
-                    <div className="user-item">
-                      <strong>Primary:</strong> {spec.users.primary}
-                    </div>
-                  )}
-                  {spec.users?.secondary && (
-                    <div className="user-item">
-                      <strong>Secondary:</strong> {spec.users.secondary}
-                    </div>
-                  )}
-                </div>
-              )}
+            <div>
+              <label className="text-sm font-medium">Priority Filter:</label>
+              <select 
+                value={priorityFilter} 
+                onChange={(e) => setPriorityFilter(e.target.value)}
+                className="ml-2 px-2 py-1 border rounded"
+              >
+                <option value="all">All</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
             </div>
           </div>
-        )}
-
-        {/* Features Tab */}
-        {activeTab === 'features' && (
-          <div className="tab-content features-tab">
-            {isEditing ? (
-              <div className="features-edit">
-                {(editedSpec.features || []).map((feature, i) => (
-                  <div key={i} className="feature-card-edit">
-                    <div className="feature-header-edit">
-                      <input
-                        type="text"
-                        value={feature.name || ''}
-                        onChange={(e) => updateArrayItem('features', i, 'name', e.target.value)}
-                        placeholder="Feature name"
-                        className="spec-input feature-name"
-                      />
-                      <select
-                        value={feature.priority || 'medium'}
-                        onChange={(e) => updateArrayItem('features', i, 'priority', e.target.value)}
-                        className="priority-select"
-                      >
-                        <option value="high">High</option>
-                        <option value="medium">Medium</option>
-                        <option value="low">Low</option>
-                      </select>
-                      <button 
-                        onClick={() => removeArrayItem('features', i)}
-                        className="remove-btn"
-                      >×</button>
-                    </div>
-                    <textarea
-                      value={feature.description || ''}
-                      onChange={(e) => updateArrayItem('features', i, 'description', e.target.value)}
-                      placeholder="Description"
-                      className="spec-textarea"
-                      rows={2}
-                    />
-                    <div className="acceptance-edit">
-                      <label>Acceptance Criteria:</label>
-                      {(feature.acceptance || []).map((criterion, j) => (
-                        <div key={j} className="acceptance-item">
-                          <input
-                            type="text"
-                            value={criterion}
-                            onChange={(e) => {
-                              const newAcceptance = [...(feature.acceptance || [])];
-                              newAcceptance[j] = e.target.value;
-                              updateArrayItem('features', i, 'acceptance', newAcceptance);
-                            }}
-                            className="spec-input small"
-                          />
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4">
+            {filteredSpecs.map((spec) => {
+              const StatusIcon = getStatusIcon(spec.status);
+              return (
+                <Card key={spec.id} className="cursor-pointer hover:bg-gray-50" onClick={() => setSelectedSpec(spec)}>
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{spec.title}</h3>
+                        <p className="text-sm text-gray-600 mt-1">{spec.description}</p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <StatusIcon className="w-4 h-4" />
+                          <Badge className={getStatusBadgeClass(spec.status)}>
+                            {spec.status}
+                          </Badge>
+                          <Badge className={getPriorityBadgeClass(spec.priority)}>
+                            {spec.priority}
+                          </Badge>
+                          <span className="text-xs text-gray-500">
+                            Created: {new Date(spec.createdAt).toLocaleDateString()}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                <button 
-                  onClick={() => addArrayItem('features', { 
-                    name: '', 
-                    description: '', 
-                    priority: 'medium', 
-                    acceptance: [''] 
-                  })}
-                  className="add-btn"
-                >+ Add Feature</button>
-              </div>
-            ) : (
-              <div className="features-display">
-                {(spec.features || []).map((feature, i) => (
-                  <div key={i} className="feature-card">
-                    <div className="feature-header">
-                      <h4>{feature.name}</h4>
-                      <span 
-                        className="priority-badge"
-                        style={{ backgroundColor: PRIORITY_COLORS[feature.priority] }}
-                      >
-                        {feature.priority}
-                      </span>
-                    </div>
-                    <p className="feature-description">{feature.description}</p>
-                    {feature.acceptance?.length > 0 && (
-                      <div className="acceptance-criteria">
-                        <h5>Acceptance Criteria:</h5>
-                        <ul>
-                          {feature.acceptance.map((criterion, j) => (
-                            <li key={j}>{criterion}</li>
-                          ))}
-                        </ul>
                       </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Technical Tab */}
-        {activeTab === 'technical' && (
-          <div className="tab-content technical-tab">
-            {/* Tech Stack */}
-            <div className="spec-field">
-              <label>Tech Stack</label>
-              {isEditing ? (
-                <div className="tags-edit">
-                  {(editedSpec.technical?.stack || []).map((tech, i) => (
-                    <div key={i} className="tag-item">
-                      <input
-                        type="text"
-                        value={tech}
-                        onChange={(e) => {
-                          const newStack = [...(editedSpec.technical?.stack || [])];
-                          newStack[i] = e.target.value;
-                          updateNested('technical', 'stack', newStack);
-                        }}
-                        className="spec-input small"
-                      />
-                      <button 
-                        onClick={() => {
-                          const newStack = (editedSpec.technical?.stack || []).filter((_, j) => j !== i);
-                          updateNested('technical', 'stack', newStack);
-                        }}
-                        className="remove-btn small"
-                      >×</button>
                     </div>
-                  ))}
-                  <button 
-                    onClick={() => {
-                      const newStack = [...(editedSpec.technical?.stack || []), ''];
-                      updateNested('technical', 'stack', newStack);
-                    }}
-                    className="add-btn small"
-                  >+ Add</button>
-                </div>
-              ) : (
-                <div className="tech-tags">
-                  {(spec.technical?.stack || []).map((tech, i) => (
-                    <span key={i} className="tech-tag">{tech}</span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Integrations */}
-            <div className="spec-field">
-              <label>Integrations</label>
-              {isEditing ? (
-                <textarea
-                  value={(editedSpec.technical?.integrations || []).join('\n')}
-                  onChange={(e) => updateNested('technical', 'integrations', 
-                    e.target.value.split('\n').filter(Boolean)
-                  )}
-                  className="spec-textarea"
-                  rows={3}
-                  placeholder="One integration per line"
-                />
-              ) : (
-                <ul className="spec-list">
-                  {(spec.technical?.integrations || []).map((item, i) => (
-                    <li key={i}>{item}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Data Model */}
-            <div className="spec-field">
-              <label>Data Model</label>
-              {isEditing ? (
-                <textarea
-                  value={editedSpec.technical?.dataModel || ''}
-                  onChange={(e) => updateNested('technical', 'dataModel', e.target.value)}
-                  className="spec-textarea"
-                  rows={4}
-                />
-              ) : (
-                <p className="spec-text">{spec.technical?.dataModel}</p>
-              )}
-            </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
-        )}
+        </CardContent>
+      </Card>
 
-        {/* Constraints Tab */}
-        {activeTab === 'constraints' && (
-          <div className="tab-content constraints-tab">
-            {/* Timeline */}
-            <div className="spec-field">
-              <label>Timeline</label>
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editedSpec.constraints?.timeline || ''}
-                  onChange={(e) => updateNested('constraints', 'timeline', e.target.value)}
-                  className="spec-input"
-                />
-              ) : (
-                <p className="spec-text">{spec.constraints?.timeline || 'Not specified'}</p>
-              )}
-            </div>
-
-            {/* Budget */}
-            <div className="spec-field">
-              <label>Budget</label>
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editedSpec.constraints?.budget || ''}
-                  onChange={(e) => updateNested('constraints', 'budget', e.target.value)}
-                  className="spec-input"
-                />
-              ) : (
-                <p className="spec-text">{spec.constraints?.budget || 'Not specified'}</p>
-              )}
-            </div>
-
-            {/* Performance */}
-            <div className="spec-field">
-              <label>Performance Requirements</label>
-              {isEditing ? (
-                <textarea
-                  value={editedSpec.constraints?.performance || ''}
-                  onChange={(e) => updateNested('constraints', 'performance', e.target.value)}
-                  className="spec-textarea"
-                  rows={2}
-                />
-              ) : (
-                <p className="spec-text">{spec.constraints?.performance || 'Not specified'}</p>
-              )}
-            </div>
-
-            {/* Out of Scope */}
-            <div className="spec-field">
-              <label>Out of Scope</label>
-              {isEditing ? (
-                <textarea
-                  value={(editedSpec.outOfScope || []).join('\n')}
-                  onChange={(e) => updateField('outOfScope', 
-                    e.target.value.split('\n').filter(Boolean)
-                  )}
-                  className="spec-textarea"
-                  rows={3}
-                  placeholder="One item per line"
-                />
-              ) : (
-                <ul className="spec-list warning">
-                  {(spec.outOfScope || []).map((item, i) => (
-                    <li key={i}>{item}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Open Questions */}
-            <div className="spec-field">
-              <label>Open Questions</label>
-              {isEditing ? (
-                <textarea
-                  value={(editedSpec.openQuestions || []).join('\n')}
-                  onChange={(e) => updateField('openQuestions', 
-                    e.target.value.split('\n').filter(Boolean)
-                  )}
-                  className="spec-textarea"
-                  rows={3}
-                  placeholder="One question per line"
-                />
-              ) : (
-                <ul className="spec-list info">
-                  {(spec.openQuestions || []).map((item, i) => (
-                    <li key={i}>❓ {item}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Action buttons */}
-      {!isEditing && (
-        <div className="spec-actions">
-          {!showRevisionInput ? (
-            <>
-              <button 
-                onClick={onApprove}
-                className="approve-btn"
-                disabled={loading}
-              >
-                ✅ Approve & Build
-              </button>
-              <button 
-                onClick={() => setShowRevisionInput(true)}
-                className="revision-btn"
-                disabled={loading}
-              >
-                🔄 Request Changes
-              </button>
-            </>
-          ) : (
-            <div className="revision-form">
-              <textarea
-                value={revisionFeedback}
-                onChange={(e) => setRevisionFeedback(e.target.value)}
-                placeholder="What would you like changed?"
-                className="revision-textarea"
-                rows={3}
-                autoFocus
-              />
-              <div className="revision-actions">
-                <button 
-                  onClick={handleRevisionSubmit}
-                  className="submit-btn"
-                  disabled={loading || !revisionFeedback.trim()}
-                >
-                  {loading ? '...' : 'Submit Feedback'}
-                </button>
-                <button 
-                  onClick={() => { setShowRevisionInput(false); setRevisionFeedback(''); }}
-                  className="cancel-btn"
-                >
-                  Cancel
-                </button>
+      {selectedSpec && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Review Specification: {selectedSpec.title}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <h4 className="font-medium">Specification Details</h4>
+              <p className="text-sm text-gray-600 mt-1">{selectedSpec.description}</p>
+              <div className="flex items-center gap-2 mt-2">
+                <Badge className={getStatusBadgeClass(selectedSpec.status)}>
+                  {selectedSpec.status}
+                </Badge>
+                <Badge className={getPriorityBadgeClass(selectedSpec.priority)}>
+                  {selectedSpec.priority}
+                </Badge>
               </div>
             </div>
-          )}
-        </div>
+            
+            <div>
+              <label className="text-sm font-medium">Review Comment</label>
+              <Textarea
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Add your review comments here..."
+                className="mt-1"
+              />
+            </div>
+            
+            <div className="flex gap-2">
+              <Button 
+                onClick={() => handleReviewSubmit('approve')} 
+                className="bg-green-600 hover:bg-green-700"
+              >
+                Approve
+              </Button>
+              <Button 
+                onClick={() => handleReviewSubmit('reject')} 
+                variant="destructive"
+              >
+                Reject
+              </Button>
+              <Button 
+                onClick={() => handleReviewSubmit('review')} 
+                variant="outline"
+              >
+                Submit Review
+              </Button>
+              <Button 
+                onClick={() => {
+                  setSelectedSpec(null);
+                  setReviewComment('');
+                }} 
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

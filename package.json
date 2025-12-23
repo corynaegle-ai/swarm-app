@@ -1,21 +1,22 @@
 {
-  "name": "swarm",
+  "name": "surgical-test-app",
   "version": "1.0.0",
-  "private": true,
-  "description": "Swarm - Distributed AI Agent Orchestration Platform",
+  "description": "Test application for surgical edits",
+  "main": "src/app.js",
   "scripts": {
-    "dev:platform": "pnpm --filter @swarm/platform dev",
-    "dev:dashboard": "pnpm --filter @swarm/dashboard dev",
-    "build:platform": "pnpm --filter @swarm/platform build",
-    "build:dashboard": "pnpm --filter @swarm/dashboard build",
-    "lint": "pnpm -r lint",
-    "test": "pnpm -r test"
+    "start": "node src/app.js",
+    "test": "jest",
+    "dev": "nodemon src/app.js"
   },
-  "keywords": ["swarm", "ai-agents", "firecracker", "microvm"],
-  "author": "Neural",
-  "license": "MIT",
-  "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
-  }
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "supertest": "^6.3.0",
+    "nodemon": "^3.0.0"
+  },
+  "keywords": ["healthcheck", "api", "express"],
+  "author": "FORGE",
+  "license": "MIT"
 }

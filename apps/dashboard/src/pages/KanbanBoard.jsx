@@ -336,7 +336,7 @@ export default function KanbanBoard() {
                 )}
                 <div className="modal-actions">
                   <Link 
-                    to={`/tickets?highlight=${selectedTicket.id}`} 
+                    to={`/tickets/${selectedTicket.id}`} 
                     className="btn-primary"
                   >
                     View Details →

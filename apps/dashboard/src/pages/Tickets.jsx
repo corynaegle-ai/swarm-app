@@ -804,6 +804,9 @@ export default function Tickets() {
                       ✅ Approve & Complete
                     </button>
                   )}
+                  <Link to={`/tickets/${selectedTicket.id}`} className="action-btn view-full-btn">
+                    📋 View Full Details
+                  </Link>
                 </div>
 
               </div>

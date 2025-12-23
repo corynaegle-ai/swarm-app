@@ -10,6 +10,7 @@ import SpecReview from './pages/SpecReview';
 import BuildProgress from './pages/BuildProgress';
 import VMs from './pages/VMs';
 import Tickets from './pages/Tickets';
+import TicketDetail from './pages/TicketDetail';
 import KanbanBoard from './pages/KanbanBoard';
 import AgentMonitor from './pages/AgentMonitor';
 import AgentCatalog from './pages/AgentCatalog';
@@ -41,6 +42,11 @@ function App() {
           <Route path="/tickets/kanban" element={
             <ProtectedRoute>
               <KanbanBoard />
+            </ProtectedRoute>
+          } />
+          <Route path="/tickets/:ticketId" element={
+            <ProtectedRoute>
+              <TicketDetail />
             </ProtectedRoute>
           } />
           <Route path="/vms" element={

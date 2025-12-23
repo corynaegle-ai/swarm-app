@@ -80,6 +80,7 @@ const learningRoutes = require('./routes/learning');
 const mcpRoutes = require('./routes/mcp');
 const internalRoutes = require('./routes/internal');
 const registryRoutes = require('./routes/agents-registry');
+const backlogRoutes = require('./routes/backlog');
 
 // Dev API rate limiter - more generous for development work
 const devLimiter = rateLimit({
@@ -106,6 +107,7 @@ app.use('/api/repo', apiLimiter, repoRoutes);
 app.use('/api/agents', apiLimiter, agentsRoutes);
 app.use('/api/learning', apiLimiter, learningRoutes);
 app.use('/api/mcp', apiLimiter, mcpRoutes);
+app.use("/api/backlog", apiLimiter, backlogRoutes);
 app.use('/api/registry', apiLimiter, registryRoutes);
 
 app.use("/api/internal", internalRoutes);

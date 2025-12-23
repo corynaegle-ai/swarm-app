@@ -351,11 +351,13 @@ router.post('/:id/start-chat', requireAuth, async (req, res) => {
       changes: { state: 'chatting' }
     });
     
+    // Fetch updated item to return to client
+    const updatedItem = await getBacklogItem(req.params.id, req.user.tenant_id);
+    
     res.json({
       success: true,
-      state: 'chatting',
-      initial_message: initialMessage,
-      chat_transcript: [initialMessage]
+      item: updatedItem,
+      chat_history: [initialMessage]
     });
   } catch (err) {
     console.error('POST /api/backlog/:id/start-chat error:', err);
@@ -430,7 +432,7 @@ router.post('/:id/chat', requireAuth, async (req, res) => {
       user_message: userMessage,
       ai_response: aiMessage,
       transcript_length: transcript.length,
-      chat_transcript: transcript
+      chat_history: transcript
     });
   } catch (err) {
     console.error('POST /api/backlog/:id/chat error:', err);
@@ -505,11 +507,12 @@ Respond in JSON format:
       changes: { state: 'refined', chat_summary: summary }
     });
     
+    // Fetch updated item to return to client
+    const updatedItem = await getBacklogItem(req.params.id, req.user.tenant_id);
+    
     res.json({
       success: true,
-      state: 'refined',
-      summary,
-      enriched_description: enrichedDescription
+      item: updatedItem
     });
   } catch (err) {
     console.error('POST /api/backlog/:id/end-chat error:', err);
@@ -548,10 +551,12 @@ router.post('/:id/abandon-chat', requireAuth, async (req, res) => {
       changes: { state: 'draft' }
     });
     
+    // Fetch updated item to return to client
+    const updatedItem = await getBacklogItem(req.params.id, req.user.tenant_id);
+    
     res.json({
       success: true,
-      state: 'draft',
-      message: 'Chat abandoned, item returned to draft'
+      item: updatedItem
     });
   } catch (err) {
     console.error('POST /api/backlog/:id/abandon-chat error:', err);
@@ -644,7 +649,7 @@ router.post('/:id/promote', requireAuth, async (req, res) => {
     res.json({
       success: true,
       backlog_state: 'promoted',
-      hitl_session: {
+      session: {
         id: sessionId,
         state: initialState,
         source_type: 'backlog',

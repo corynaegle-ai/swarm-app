@@ -431,7 +431,8 @@
 
 .action-group {
   display: flex;
-  gap: 0.75rem;
+  gap: 1rem;
+  flex-shrink: 0;
 }
 
 /* Detail Modal */
@@ -683,14 +684,3 @@
   }
 }
 
-/* Fix button overflow in modal actions */
-.modal-actions button {
-  flex-shrink: 1;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.modal-actions .action-group {
-  flex-shrink: 1;
-  min-width: 0;
-}

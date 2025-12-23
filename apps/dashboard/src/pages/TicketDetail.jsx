@@ -120,9 +120,9 @@ export default function TicketDetail() {
 
   if (loading) {
     return (
-      <div className="layout-container">
+      <div className="page-container">
         <Sidebar />
-        <main className="main-content">
+        <main className="page-main">
           <div className="loading-spinner">
             <div className="spinner" />
             <p>Loading ticket...</p>
@@ -134,9 +134,9 @@ export default function TicketDetail() {
 
   if (error || !ticket) {
     return (
-      <div className="layout-container">
+      <div className="page-container">
         <Sidebar />
-        <main className="main-content">
+        <main className="page-main">
           <div className="error-container" style={{ padding: '2rem', textAlign: 'center' }}>
             <h2 style={{ color: '#ef4444' }}>Error</h2>
             <p style={{ color: '#888', marginTop: '0.5rem' }}>{error || 'Ticket not found'}</p>
@@ -153,9 +153,9 @@ export default function TicketDetail() {
   }
 
   return (
-    <div className="layout-container">
+    <div className="page-container">
       <Sidebar />
-      <main className="main-content">
+      <main className="page-main">
         <div style={{ padding: '1.5rem 2rem' }}>
           {/* Header */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>

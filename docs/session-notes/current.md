@@ -1,38 +1,39 @@
 # Current Session Notes
 
-## Session: December 19, 2024 - Monorepo Migration
+## Session: December 22, 2024 - BuildProgress Bug Fix
 
-### Status: PLATFORM MIGRATED ✅ | DASHBOARD PENDING
-
----
-
-## Monorepo Deployment Progress
-
-### Completed
-- GitHub Actions deploy workflow working
-- DEV droplet synced to `/opt/swarm-app`
-- Platform migrated to monorepo path
-- Platform health check passing
-- PM2 config saved
-
-### Pending
-- Dashboard migration to monorepo path
-- Local dev testing with SSH tunnel
-- Auto-Claude testing
+### Status: ✅ FIXED
 
 ---
 
-## Key Paths
+## Fix Summary
 
-### DEV Droplet (134.199.235.140)
-| Component | Old Path | New Path | Status |
-|-----------|----------|----------|--------|
-| Platform | /opt/swarm-platform | /opt/swarm-app/apps/platform | ✅ Migrated |
-| Dashboard | /opt/swarm-dashboard | /opt/swarm-app/apps/dashboard | ❌ Pending |
+**Problem**: BuildProgress page at `/build/:sessionId` was returning 500 error.
 
-### Local Mac
-- Monorepo: `~/Projects/swarm`
-- Auto-Claude: `~/Projects/Auto-Claude`
+**Root Cause**: The HITL route's tickets query was selecting a `type` column that doesn't exist in the `tickets` table (PostgreSQL error 42703 - column does not exist).
+
+**Solution**: Removed `type` from the SELECT statement in `/opt/swarm-app/apps/platform/routes/hitl.js` line 73.
+
+**Before**:
+```sql
+SELECT id, title, type, state, priority, created_at, updated_at
+FROM tickets WHERE design_session = $1
+```
+
+**After**:
+```sql
+SELECT id, title, state, priority, created_at, updated_at
+FROM tickets WHERE design_session = $1
+```
+
+**Commit**: `ee30af2` - "fix: remove non-existent type column from tickets query in HITL route"
+
+---
+
+## Verification
+
+- API: `curl localhost:8080/api/hitl/6812bebd-3d71-4a1a-9c1a-34cb4c27c8af` ✅ Returns session with 21 tickets
+- Page: https://dashboard.dev.swarmstack.net/build/6812bebd-3d71-4a1a-9c1a-34cb4c27c8af
 
 ---
 
@@ -43,18 +44,9 @@
 ssh -i ~/.ssh/swarm_key root@134.199.235.140
 export PATH=/root/.nvm/versions/node/v22.21.1/bin:$PATH
 
-# Test platform
-curl http://134.199.235.140:8080/health
+# Service restart
+pm2 restart swarm-platform-dev
 
-# Local dev (requires tunnel)
-~/Projects/swarm/scripts/tunnel-dev-db.sh  # Terminal 1
-cd ~/Projects/swarm/apps/platform && pnpm dev  # Terminal 2
-
-# Auto-Claude
-cd ~/Projects/Auto-Claude/auto-claude-ui && pnpm run start
+# Test HITL endpoint
+curl localhost:8080/api/hitl/6812bebd-3d71-4a1a-9c1a-34cb4c27c8af | jq .session.state
 ```
-
----
-
-## Continuation Prompt
-`~/Projects/swarm/docs/prompts/continue-monorepo-migration.md`

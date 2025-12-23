@@ -68,12 +68,21 @@ router.get('/:sessionId', async (req, res) => {
         : {};
     } catch (e) {}
     
+    // Fetch tickets for this session
+    const tickets = await queryAll(`
+      SELECT id, title, state, priority, created_at, updated_at
+      FROM tickets 
+      WHERE design_session = $1 
+      ORDER BY created_at ASC
+    `, [req.params.sessionId]);
+    
     res.json({ 
       session: {
         ...session,
         clarificationContext
       }, 
-      messages 
+      messages,
+      tickets
     });
   } catch (err) {
     console.error('GET /hitl/:sessionId error:', err);

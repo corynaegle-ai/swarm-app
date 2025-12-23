@@ -1,123 +1,228 @@
-  async executeGenerateTickets(session, context) {
-    const db = getDb();
-    
-    // Get the spec card
-    const specCard = session.spec_card ? JSON.parse(session.spec_card) : null;
-    if (!specCard) {
-      return { type: 'tickets', tickets: [], status: 'error', message: 'No spec card found. Generate spec first.' };
-    }
+const EventEmitter = require('events');
+const logger = require('../utils/logger');
 
-    const systemPrompt = `You are a technical project manager. Decompose a software specification into actionable development tickets.
+/**
+ * Ticket Generator Implementation
+ * Handles ticket creation with priority support and validation
+ */
+class TicketGeneratorImpl extends EventEmitter {
+  constructor(database) {
+    super();
+    this.db = database;
+    this.validPriorities = ['low', 'medium', 'high', 'critical'];
+  }
 
-## Rules
-1. Each ticket should be completable by ONE developer in 1-4 hours
-2. Include clear acceptance criteria
-3. Order tickets by dependency (foundational work first)
-4. Use ticket types: setup, backend, frontend, integration, testing, documentation
-5. Assign estimated_scope: small (1-2hr), medium (2-4hr), large (4-8hr)
+  /**
+   * Validates priority parameter
+   * @param {string} priority - Priority value to validate
+   * @returns {boolean} True if valid, false otherwise
+   */
+  isValidPriority(priority) {
+    return this.validPriorities.includes(priority?.toLowerCase());
+  }
 
-## Output Format
-Return JSON:
-{
-  "tickets": [
-    {
-      "title": "Short descriptive title",
-      "type": "setup|backend|frontend|integration|testing|documentation",
-      "description": "Detailed description of what needs to be built",
-      "acceptanceCriteria": ["criterion 1", "criterion 2"],
-      "estimatedScope": "small|medium|large",
-      "dependencies": ["title of dependent ticket if any"],
-      "feature": "Which spec feature this implements"
-    }
-  ],
-  "phases": [
-    {
-      "name": "Phase name",
-      "description": "Phase goal",
-      "ticketTitles": ["tickets in this phase"]
-    }
-  ],
-  "totalTickets": number,
-  "estimatedDays": number,
-  "message": "Summary of the decomposition"
-}`;
+  /**
+   * Normalizes priority value to lowercase
+   * @param {string} priority - Priority value to normalize
+   * @returns {string} Normalized priority value
+   */
+  normalizePriority(priority) {
+    return priority?.toLowerCase() || 'medium';
+  }
 
-    const response = await chat({
-      system: systemPrompt,
-      messages: [{
-        role: 'user',
-        content: `Decompose this specification into development tickets:\n\n${JSON.stringify(specCard, null, 2)}`
-      }],
-      maxTokens: 8192
-    });
-
-    if (!response.success) {
-      return { type: 'tickets', tickets: [], status: 'error', message: 'Failed to generate tickets.', error: response.error };
-    }
-
-    const parsed = parseJsonResponse(response.content);
-    
-    if (parsed?.tickets) {
-      // Create or get a project for these tickets
-      const { randomUUID } = require('crypto');
+  /**
+   * Generates a new ticket with priority support
+   * @param {Object} ticketSpec - Ticket specification
+   * @param {string} ticketSpec.title - Ticket title
+   * @param {string} ticketSpec.description - Ticket description
+   * @param {string} ticketSpec.type - Ticket type
+   * @param {string} [ticketSpec.priority='medium'] - Ticket priority
+   * @param {string} ticketSpec.assignee - Assigned user
+   * @param {Object} [options={}] - Additional options
+   * @returns {Promise<Object>} Generated ticket
+   */
+  async generateTicket(ticketSpec, options = {}) {
+    try {
+      // Extract and normalize priority
+      const priority = this.normalizePriority(ticketSpec.priority);
       
-      // Check if project exists for this session
-      let projectId = db.prepare(`SELECT id FROM projects WHERE name = ?`).get(specCard.title)?.id;
-      
-      if (!projectId) {
-        projectId = randomUUID();
-        const repoUrl = `https://github.com/placeholder/${specCard.title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
-        db.prepare(`
-          INSERT INTO projects (id, tenant_id, name, repo_url, description, created_at)
-          VALUES (?, ?, ?, ?, ?, datetime('now'))
-        `).run(projectId, session.tenant_id || 'default', specCard.title, repoUrl, specCard.summary);
+      // Validate priority enum value
+      if (!this.isValidPriority(priority)) {
+        const error = new Error(`Invalid priority '${ticketSpec.priority}'. Valid values are: ${this.validPriorities.join(', ')}`);
+        error.code = 'INVALID_PRIORITY';
+        throw error;
       }
 
-      // Store tickets in the database
-      const insertStmt = db.prepare(`
-        INSERT INTO tickets (id, project_id, title, description, acceptance_criteria, state, estimated_scope, design_session, created_at)
-        VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, datetime('now'))
-      `);
-
-      const createdTickets = [];
-      for (const ticket of parsed.tickets) {
-        const ticketId = randomUUID();
-        const acceptanceCriteria = JSON.stringify(ticket.acceptanceCriteria || []);
-        
-        insertStmt.run(
-          ticketId,
-          projectId,
-          ticket.title,
-          `[${ticket.type}] ${ticket.description}\n\nFeature: ${ticket.feature}\nDependencies: ${(ticket.dependencies || []).join(', ') || 'None'}`,
-          acceptanceCriteria,
-          ticket.estimatedScope || 'medium',
-          session.id
-        );
-        
-        createdTickets.push({
-          id: ticketId,
-          ...ticket
-        });
+      // Validate required fields
+      const requiredFields = ['title', 'description', 'type', 'assignee'];
+      const missingFields = requiredFields.filter(field => !ticketSpec[field]);
+      
+      if (missingFields.length > 0) {
+        const error = new Error(`Missing required fields: ${missingFields.join(', ')}`);
+        error.code = 'MISSING_FIELDS';
+        throw error;
       }
 
-      // Update session state to building
-      db.prepare(`
-        UPDATE hitl_sessions 
-        SET state = 'building', updated_at = datetime('now')
-        WHERE id = ?
-      `).run(session.id);
+      // Generate unique ticket ID
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const ticketId = `TKT-${timestamp.toString(16).toUpperCase()}${randomSuffix}`;
+
+      // Prepare ticket data with priority
+      const ticketData = {
+        ticket_id: ticketId,
+        title: ticketSpec.title.trim(),
+        description: ticketSpec.description.trim(),
+        type: ticketSpec.type.toLowerCase(),
+        priority: priority,
+        assignee: ticketSpec.assignee.trim(),
+        status: 'open',
+        created_at: new Date(),
+        updated_at: new Date(),
+        labels: ticketSpec.labels || [],
+        metadata: {
+          generator_version: '2.1.0',
+          priority_source: ticketSpec.priority ? 'explicit' : 'default',
+          ...options.metadata
+        }
+      };
+
+      // Insert ticket into database with priority field
+      const insertQuery = `
+        INSERT INTO tickets (
+          ticket_id,
+          title,
+          description,
+          type,
+          priority,
+          assignee,
+          status,
+          created_at,
+          updated_at,
+          labels,
+          metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING *
+      `;
+
+      const queryParams = [
+        ticketData.ticket_id,
+        ticketData.title,
+        ticketData.description,
+        ticketData.type,
+        ticketData.priority,
+        ticketData.assignee,
+        ticketData.status,
+        ticketData.created_at,
+        ticketData.updated_at,
+        JSON.stringify(ticketData.labels),
+        JSON.stringify(ticketData.metadata)
+      ];
+
+      const result = await this.db.query(insertQuery, queryParams);
+      const createdTicket = result.rows[0];
+
+      // Emit ticket creation event
+      this.emit('ticketGenerated', {
+        ticketId: createdTicket.ticket_id,
+        priority: createdTicket.priority,
+        timestamp: new Date()
+      });
+
+      logger.info(`Generated ticket ${createdTicket.ticket_id} with priority ${createdTicket.priority}`);
+
+      return createdTicket;
+
+    } catch (error) {
+      logger.error('Ticket generation failed:', {
+        error: error.message,
+        code: error.code,
+        ticketSpec: { ...ticketSpec, description: '[REDACTED]' }
+      });
+
+      // Emit error event
+      this.emit('ticketGenerationFailed', {
+        error: error.message,
+        code: error.code,
+        timestamp: new Date()
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Batch generate multiple tickets with priority support
+   * @param {Array<Object>} ticketSpecs - Array of ticket specifications
+   * @param {Object} [options={}] - Batch generation options
+   * @returns {Promise<Array<Object>>} Array of generated tickets
+   */
+  async batchGenerateTickets(ticketSpecs, options = {}) {
+    const results = [];
+    const errors = [];
+
+    try {
+      // Start transaction for batch operation
+      await this.db.query('BEGIN');
+
+      for (let i = 0; i < ticketSpecs.length; i++) {
+        try {
+          const ticket = await this.generateTicket(ticketSpecs[i], {
+            ...options,
+            batchIndex: i,
+            batchSize: ticketSpecs.length
+          });
+          results.push(ticket);
+        } catch (error) {
+          errors.push({ index: i, error: error.message, code: error.code });
+          
+          if (!options.continueOnError) {
+            throw error;
+          }
+        }
+      }
+
+      await this.db.query('COMMIT');
+
+      logger.info(`Batch generated ${results.length} tickets with ${errors.length} errors`);
 
       return {
-        type: 'tickets',
-        tickets: createdTickets,
-        phases: parsed.phases,
-        projectId,
-        totalTickets: parsed.totalTickets || createdTickets.length,
-        estimatedDays: parsed.estimatedDays,
-        status: 'generated',
-        message: parsed.message || `Generated ${createdTickets.length} tickets.`
+        success: results,
+        errors: errors,
+        summary: {
+          total: ticketSpecs.length,
+          successful: results.length,
+          failed: errors.length
+        }
       };
-    }
 
-    return { type: 'tickets', tickets: [], status: 'parse_error', message: 'Could not parse tickets.', raw: response.content };
+    } catch (error) {
+      await this.db.query('ROLLBACK');
+      logger.error('Batch ticket generation failed:', error.message);
+      throw error;
+    }
   }
+
+  /**
+   * Get valid priority values
+   * @returns {Array<string>} Array of valid priority values
+   */
+  getValidPriorities() {
+    return [...this.validPriorities];
+  }
+
+  /**
+   * Get priority validation schema for API documentation
+   * @returns {Object} Priority validation schema
+   */
+  getPrioritySchema() {
+    return {
+      type: 'string',
+      enum: this.validPriorities,
+      default: 'medium',
+      description: 'Ticket priority level'
+    };
+  }
+}
+
+module.exports = TicketGeneratorImpl;

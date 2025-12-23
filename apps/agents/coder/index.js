@@ -179,8 +179,8 @@ async function completeTicket(ticketId, success, prUrl = null, error = null, cri
 }
 
 // Claude API call with FORGE persona
-async function generateCode(ticket, heartbeatFn, projectSettings = {}) {
-  const prompt = buildPrompt(ticket, {});  // existingFiles passed from processTicket
+async function generateCode(ticket, heartbeatFn, projectSettings = {}, existingFiles = {}) {
+  const prompt = buildPrompt(ticket, existingFiles);  // existingFiles passed from processTicket
   
   const heartbeatTimer = setInterval(() => heartbeatFn(), CONFIG.heartbeatInterval);
   
@@ -213,7 +213,7 @@ async function generateCode(ticket, heartbeatFn, projectSettings = {}) {
 }
 
 // Generate code with retry context (validation errors from previous attempt)
-async function generateCodeWithRetry(ticket, heartbeatFn, projectSettings, previousResult, validationErrors) {
+async function generateCodeWithRetry(ticket, heartbeatFn, projectSettings, previousResult, validationErrors, existingFiles = {}) {
   const prompt = buildRetryPrompt(ticket, previousResult, validationErrors);
   
   const heartbeatTimer = setInterval(() => heartbeatFn(), CONFIG.heartbeatInterval);
@@ -413,8 +413,8 @@ IMPORTANT:
 }
 
 // Build retry prompt with validation errors
-function buildRetryPrompt(ticket, previousResult, validationErrors) {
-  const basePrompt = buildPrompt(ticket);
+function buildRetryPrompt(ticket, previousResult, validationErrors, existingFiles = {}) {
+  const basePrompt = buildPrompt(ticket, existingFiles);
   
   const errorContext = codeValidator 
     ? codeValidator.formatErrorsForPrompt(validationErrors)
@@ -692,6 +692,28 @@ async function processTicket(ticket, projectSettings = {}) {
     branchName = cloneResult.branchName;
     log.info('Cloned repo', { branch: branchName });
     
+    // Fetch existing file content for files_to_modify
+    const existingFiles = {};
+    if (ticket.rag_context) {
+      try {
+        const ctx = typeof ticket.rag_context === 'string' 
+          ? JSON.parse(ticket.rag_context) 
+          : ticket.rag_context;
+        const filesToModify = ctx.files_to_modify || [];
+        for (const filePath of filesToModify) {
+          const fileContent = fetchExistingFileContent(repoDir, filePath);
+          if (fileContent) {
+            existingFiles[filePath] = fileContent;
+            log.info('Fetched existing file for modification', { path: filePath, lines: fileContent.split('\n').length });
+          } else {
+            log.warn('File to modify not found', { path: filePath });
+          }
+        }
+      } catch (e) {
+        log.warn('Failed to fetch existing files', { error: e.message });
+      }
+    }
+    
     // RETRY LOOP
     const maxAttempts = RETRY_CONFIG.maxInternalAttempts;
     let lastResult = null;
@@ -710,9 +732,9 @@ async function processTicket(ticket, projectSettings = {}) {
         
         let result;
         if (currentAttempt === 1) {
-          result = await generateCode(ticket, heartbeatFn, projectSettings);
+          result = await generateCode(ticket, heartbeatFn, projectSettings, existingFiles);
         } else {
-          result = await generateCodeWithRetry(ticket, heartbeatFn, projectSettings, lastResult, lastValidationErrors);
+          result = await generateCodeWithRetry(ticket, heartbeatFn, projectSettings, lastResult, lastValidationErrors, existingFiles);
         }
         
         inputTokens += result.usage?.inputTokens || 0;

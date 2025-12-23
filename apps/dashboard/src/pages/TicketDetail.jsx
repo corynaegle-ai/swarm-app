@@ -51,7 +51,8 @@ async function fetchTicket(ticketId) {
     throw new Error('Failed to fetch ticket');
   }
   
-  return res.json();
+  const data = await res.json();
+  return data.ticket || data;
 }
 
 /**

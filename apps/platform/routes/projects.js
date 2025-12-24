@@ -215,25 +215,11 @@ router.post('/validate-repo', requireAuth, async (req, res) => {
   }
 });
 
-// =============================================================================
-// MCP Server Configuration Endpoints
-// =============================================================================
+module.exports = router;
 
-// GET /api/mcp/servers - List available MCP servers from Fabric
-router.get('/mcp/servers', requireAuth, async (req, res) => {
-  try {
-    const fabricUrl = process.env.MCP_FABRIC_URL || 'http://localhost:8085';
-    const response = await fetch(`${fabricUrl}/api/mcp/servers`);
-    if (!response.ok) {
-      throw new Error(`MCP Fabric returned ${response.status}`);
-    }
-    const data = await response.json();
-    res.json(data);
-  } catch (err) {
-    console.error('GET /mcp/servers error:', err);
-    res.status(500).json({ error: 'Failed to fetch MCP servers', details: err.message });
-  }
-});
+// =============================================================================
+// MCP Server Configuration for Projects
+// =============================================================================
 
 // PUT /api/projects/:id/mcp-servers - Update project MCP server config
 router.put('/:id/mcp-servers', requireAuth, requireTenant, requirePermission('manage_projects'), async (req, res) => {
@@ -245,7 +231,6 @@ router.put('/:id/mcp-servers', requireAuth, requireTenant, requirePermission('ma
       return res.status(400).json({ error: 'mcp_servers must be an array' });
     }
     
-    // Verify project belongs to tenant
     const project = await queryOne(
       'SELECT id FROM projects WHERE id = $1 AND tenant_id = $2',
       [id, req.tenantId]
@@ -282,5 +267,3 @@ router.get('/:id/mcp-servers', requireAuth, requireTenant, requirePermission('vi
     res.status(500).json({ error: 'Failed to get MCP servers' });
   }
 });
-
-module.exports = router;

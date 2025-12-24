@@ -122,25 +122,4 @@ router.post('/create-project', requireServiceAuth, async (req, res) => {
   }
 });
 
-
-/**
- * GET /api/mcp/servers
- * Proxy to MCP Fabric to list available servers
- * Public endpoint (no service auth) for dashboard
- */
-router.get('/servers', async (req, res) => {
-  try {
-    const fabricUrl = process.env.MCP_FABRIC_URL || 'http://localhost:8085';
-    const response = await fetch(`${fabricUrl}/api/mcp/servers`);
-    if (!response.ok) {
-      throw new Error(`MCP Fabric returned ${response.status}`);
-    }
-    const data = await response.json();
-    res.json(data);
-  } catch (err) {
-    console.error('GET /api/mcp/servers error:', err);
-    res.status(500).json({ error: 'Failed to fetch MCP servers', details: err.message });
-  }
-});
-
 module.exports = router;

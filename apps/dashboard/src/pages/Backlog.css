@@ -656,15 +656,13 @@
   position: absolute;
   right: 1.75rem;
   bottom: 1.25rem;
-  padding: 0.5rem;
+  padding: 0.5rem 0.75rem;
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   color: #fff;
   border: none;
-  border-radius: 50%;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
-  width: 36px;
-  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;

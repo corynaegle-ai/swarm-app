@@ -287,22 +287,37 @@
 
 /* ===== INPUT FORM ===== */
 .ds-input-form {
-  display: flex;
-  gap: 0.75rem;
+  position: relative;
   padding: 1rem 1.25rem;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(0, 0, 0, 0.2);
 }
 
 .ds-input-form .form-input {
-  flex: 1;
-  padding: 0.75rem 1rem;
+  width: 100%;
+  padding: 0.75rem 3.5rem 0.75rem 1rem;
   background: rgba(10, 10, 10, 0.8);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: 12px;
   color: #fff;
   font-size: 0.95rem;
   transition: all 0.3s ease;
+  min-height: 100px;
+  max-height: 200px;
+  resize: none;
+  overflow-y: auto;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.ds-input-form .btn-primary {
+  position: absolute;
+  right: 1.5rem;
+  bottom: 1.25rem;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .ds-input-form .form-input:focus {

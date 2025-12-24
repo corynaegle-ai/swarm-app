@@ -443,18 +443,19 @@ export default function DesignSession() {
             {/* Chat input - always visible when canChat is true */}
             {canShowChat && (
               <form onSubmit={handleSendMessage} className="ds-input-form">
-                <input
+                <textarea
                   ref={inputRef}
-                  type="text"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
-                  onBlur={(e) => {
-                    console.log('[DEBUG] Input BLUR - lost focus to:', document.activeElement?.tagName, document.activeElement?.className);
-                    console.log('[DEBUG] Related target:', e.relatedTarget?.tagName, e.relatedTarget?.className);
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage(e);
+                    }
                   }}
-                  onFocus={() => console.log('[DEBUG] Input FOCUS gained')}
                   placeholder={getPlaceholder()}
                   className="form-input"
+                  rows={4}
                 />
                 <button type="submit" className="btn-primary" disabled={!inputValue.trim() || !canSubmit}>
                   <Send size={18} />

@@ -374,6 +374,14 @@ export default function Backlog() {
     const file = e.target.files?.[0];
     if (!file || !selectedItem) return;
     
+    // Check file size (10MB limit)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error("File too large. Maximum size is 10MB");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    
     const formData = new FormData();
     formData.append('file', file);
     
@@ -937,6 +945,42 @@ export default function Backlog() {
             </div>
           </div>
         )}
+
+        {/* Abandon Chat Confirmation Modal */}
+        {showAbandonConfirm && selectedItem && (
+          <div className="modal-overlay" onClick={() => setShowAbandonConfirm(false)}>
+            <div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
+              <div className="confirm-icon danger">
+                <X size={32} />
+              </div>
+              <h3>Abandon this chat session?</h3>
+              <p>The item will return to draft state and chat history will be cleared.</p>
+              <div className="modal-actions">
+                <button 
+                  className="btn-secondary"
+                  onClick={() => setShowAbandonConfirm(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn-danger"
+                  onClick={() => {
+                    setShowAbandonConfirm(false);
+                    handleAbandonChat();
+                  }}
+                  disabled={actionLoading === 'abandon'}
+                >
+                  {actionLoading === 'abandon' ? (
+                    <><Loader2 size={16} className="spin" /> Abandoning...</>
+                  ) : (
+                    <>Abandon Session</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* Promote Modal */}
         {showPromoteModal && selectedItem && (

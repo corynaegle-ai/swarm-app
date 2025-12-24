@@ -109,6 +109,16 @@ app.use('/api/learning', apiLimiter, learningRoutes);
 app.use('/api/mcp', apiLimiter, mcpRoutes);
 app.use("/api/backlog", apiLimiter, backlogRoutes);
 app.use('/api/registry', apiLimiter, registryRoutes);
+// Serve uploaded files with tenant isolation
+const { requireAuth } = require("./middleware/auth");
+app.use("/uploads", requireAuth, async (req, res, next) => {
+  const pathParts = req.path.split("/");
+  const pathTenantId = pathParts[1];
+  if (pathTenantId !== req.user.tenant_id) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+  next();
+}, express.static("/opt/swarm-app/uploads"));
 
 app.use("/api/internal", internalRoutes);
 // Legacy ticket routes (agent endpoints)

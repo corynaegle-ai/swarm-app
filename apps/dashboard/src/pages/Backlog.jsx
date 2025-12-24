@@ -6,8 +6,8 @@ import { apiCall } from '../utils/api';
 import Sidebar from '../components/Sidebar';
 import {
   Lightbulb, Plus, MessageSquare, Sparkles, ArrowRight, Trash2,
-  Edit3, X, Check, Send, Loader2, Filter, Clock, AlertCircle,
-  ExternalLink, ChevronDown, MoreVertical
+  Edit3, X, Check, Send, Loader2, Filter, Clock, AlertCircle, Database,
+  ExternalLink, ChevronDown, MoreVertical, Paperclip, Upload, Link2, FileText, Image, GitBranch
 } from 'lucide-react';
 import './Backlog.css';
 
@@ -24,6 +24,8 @@ export default function Backlog() {
   const [filter, setFilter] = useState('all');
   const [selectedItem, setSelectedItem] = useState(null);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [repos, setRepos] = useState([]);
+  const [selectedRepoUrl, setSelectedRepoUrl] = useState('');
   const [chatMode, setChatMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
@@ -43,6 +45,15 @@ export default function Backlog() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [skipClarification, setSkipClarification] = useState(false);
+
+  // Attachment states
+  const [attachments, setAttachments] = useState([]);
+  const [showAttachmentModal, setShowAttachmentModal] = useState(false);
+  const [attachmentTab, setAttachmentTab] = useState("upload");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [linkName, setLinkName] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = useRef(null);
 
   // Fetch backlog items
   const fetchItems = async () => {
@@ -64,6 +75,22 @@ export default function Backlog() {
 
   useEffect(() => { fetchItems(); }, [filter]);
 
+  // Fetch available repos for selection
+  useEffect(() => {
+    const fetchRepos = async () => {
+      try {
+        const res = await apiCall('/api/backlog/repos');
+        if (res.ok) {
+          const data = await res.json();
+          setRepos(data.repos || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch repos:', err);
+      }
+    };
+    fetchRepos();
+  }, []);
+
 
   // Create new item
   const handleQuickAdd = async (e) => {
@@ -74,12 +101,13 @@ export default function Backlog() {
     try {
       const res = await apiCall('/api/backlog', {
         method: 'POST',
-        body: JSON.stringify({ title: quickTitle.trim() })
+        body: JSON.stringify({ title: quickTitle.trim(), repo_url: selectedRepoUrl || null })
       });
       if (res.ok) {
         const data = await res.json();
         toast.success('Idea added to backlog');
         setQuickTitle('');
+        setSelectedRepoUrl('');
         setShowQuickAdd(false);
         fetchItems();
       } else {
@@ -100,7 +128,7 @@ export default function Backlog() {
     setActionLoading('update');
     try {
       const res = await apiCall(`/api/backlog/${selectedItem.id}`, {
-        method: 'PUT',
+        method: 'PATCH',
         body: JSON.stringify({ 
           title: editTitle.trim(), 
           description: editDescription.trim() 
@@ -492,6 +520,25 @@ export default function Backlog() {
                   onChange={e => setQuickTitle(e.target.value)}
                   autoFocus
                 />
+                <div className="repo-selector">
+                  <label className="repo-label">
+                    <Database size={14} />
+                    Repository (optional)
+                  </label>
+                  <select
+                    className="input-field"
+                    value={selectedRepoUrl}
+                    onChange={e => setSelectedRepoUrl(e.target.value)}
+                  >
+                    <option value="">No repository</option>
+                    {repos.map(repo => (
+                      <option key={repo.id} value={repo.url}>
+                        {repo.name} ({repo.chunk_count} chunks)
+                      </option>
+                    ))}
+                  </select>
+                  <span className="repo-hint">Select a repo to enable RAG context during refinement</span>
+                </div>
                 <div className="modal-actions">
                   <button 
                     type="button" 

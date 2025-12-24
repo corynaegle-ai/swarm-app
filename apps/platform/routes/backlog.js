@@ -14,6 +14,8 @@ const { queryAll, queryOne, execute } = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const { broadcast } = require('../websocket');
 const { chat } = require('../services/claude-client');
+const { fetchContext } = require('../services/rag-client');
+const RAG_BASE_URL = process.env.RAG_URL || 'http://localhost:8082';
 
 // ============================================================================
 // CONSTANTS
@@ -37,23 +39,98 @@ async function getBacklogItem(id, tenantId) {
   );
 }
 
+
+/**
+ * Fetch RAG context for a backlog item based on its repo_url
+ */
+async function fetchBacklogRagContext(item, query) {
+  if (!item.repo_url) {
+    return { context: '', files: [], success: false, reason: 'no_repo_url' };
+  }
+  
+  try {
+    const result = await fetchContext(query, [item.repo_url], { maxTokens: 4000 });
+    console.log(`[RAG] Backlog context: ${result.success ? result.tokenCount + ' tokens' : result.reason}`);
+    return result;
+  } catch (error) {
+    console.error('[RAG] Error fetching backlog context:', error.message);
+    return { context: '', files: [], success: false, reason: error.message };
+  }
+}
+
 /**
  * Generate initial clarifying message based on backlog item
  */
-function generateClarifyingPrompt(item) {
-  return `You are a technical product clarifier helping refine a project idea.
+function generateClarifyingPrompt(item, ragContext = '') {
+  let systemPrompt = `You are a technical product clarifier helping refine a project idea.
 
 The user has submitted this idea to their backlog:
 Title: ${item.title}
-Description: ${item.description || 'No description provided'}
+Description: ${item.description || 'No description provided'}`;
+
+  if (item.repo_url) {
+    systemPrompt += `
+Repository: ${item.repo_url}`;
+  }
+
+  if (ragContext) {
+    systemPrompt += `
+
+The following code context from the repository may be relevant:
+
+<repository_context>
+${ragContext}
+</repository_context>
+
+Use this context to ask informed questions about the codebase.`;
+  }
+
+  systemPrompt += `
 
 Your goal is to ask 2-3 focused clarifying questions to better understand:
 1. The core problem being solved
-2. Key technical requirements or constraints
+2. Key technical requirements or constraints  
 3. Success criteria
 
-Be conversational and helpful. Don't overwhelm with too many questions at once.`;
+Be conversational and helpful. Don't overwhelm with too many questions at once.
+When relevant, reference specific files or patterns from the repository context.`;
+
+  return systemPrompt;
 }
+
+
+// ============================================================================
+// REPOSITORY ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /api/backlog/repos - List available repositories from RAG service
+ */
+router.get('/repos', requireAuth, async (req, res) => {
+  try {
+    const response = await fetch(`${RAG_BASE_URL}/api/rag/repositories`);
+    if (!response.ok) {
+      return res.status(502).json({ error: 'Failed to fetch repositories from RAG service' });
+    }
+    
+    const data = await response.json();
+    
+    // Return only essential fields for the dropdown - filter to ready repos only
+    const repos = (data.repositories || [])
+      .filter(r => r.index_status === 'ready')
+      .map(r => ({
+        id: r.id,
+        url: r.url,
+        name: r.name,
+        chunk_count: r.chunk_count
+      }));
+    
+    res.json({ repos });
+  } catch (err) {
+    console.error('GET /api/backlog/repos error:', err);
+    res.status(500).json({ error: 'Failed to fetch repositories' });
+  }
+});
 
 // ============================================================================
 // CRUD ENDPOINTS
@@ -64,7 +141,7 @@ Be conversational and helpful. Don't overwhelm with too many questions at once.`
  */
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const { title, description, labels, priority, project_id } = req.body;
+    const { title, description, labels, priority, project_id, repo_url } = req.body;
     const tenantId = req.user.tenant_id;
     
     if (!title || title.trim().length === 0) {
@@ -87,9 +164,9 @@ router.post('/', requireAuth, async (req, res) => {
     );
     
     await execute(`
-      INSERT INTO backlog_items (id, tenant_id, title, description, labels, priority, rank, project_id, created_by, state)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft')
-    `, [id, tenantId, title.trim(), description || null, JSON.stringify(itemLabels), itemPriority, maxRank.next_rank, project_id || null, req.user.id]);
+      INSERT INTO backlog_items (id, tenant_id, title, description, labels, priority, rank, project_id, repo_url, created_by, state)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft')
+    `, [id, tenantId, title.trim(), description || null, JSON.stringify(itemLabels), itemPriority, maxRank.next_rank, project_id || null, repo_url || null, req.user.id]);
     
     const item = await getBacklogItem(id, tenantId);
     
@@ -98,7 +175,8 @@ router.post('/', requireAuth, async (req, res) => {
       id: item.id,
       title: item.title,
       state: item.state,
-      priority: item.priority
+      priority: item.priority,
+      repo_url: item.repo_url
     });
     
     res.status(201).json(item);
@@ -211,7 +289,7 @@ router.patch('/:id', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Cannot edit promoted items' });
     }
     
-    const { title, description, labels, priority, rank, project_id } = req.body;
+    const { title, description, labels, priority, rank, project_id, repo_url } = req.body;
     const updates = [];
     const params = [];
     let paramIndex = 1;
@@ -245,8 +323,13 @@ router.patch('/:id', requireAuth, async (req, res) => {
     }
     
     if (project_id !== undefined) {
-      updates.push(`project_id = $${paramIndex++}`);
+      updates.push(`project_id = ${paramIndex++}`);
       params.push(project_id);
+    }
+    
+    if (repo_url !== undefined) {
+      updates.push(`repo_url = ${paramIndex++}`);
+      params.push(repo_url);
     }
     
     if (updates.length === 0) {
@@ -325,8 +408,17 @@ router.post('/:id/start-chat', requireAuth, async (req, res) => {
       });
     }
     
-    // Generate initial AI message
-    const systemPrompt = generateClarifyingPrompt(item);
+    // Fetch RAG context if repo_url is set
+    let ragContext = '';
+    if (item.repo_url) {
+      const ragResult = await fetchBacklogRagContext(item, `Feature: ${item.title}. ${item.description || ''}`);
+      if (ragResult.success) {
+        ragContext = ragResult.context;
+      }
+    }
+    
+    // Generate initial AI message with RAG context
+    const systemPrompt = generateClarifyingPrompt(item, ragContext);
     const aiResult = await chat({ messages: [
       { role: 'user', content: 'Please start the clarification conversation.' }
     ], system: systemPrompt });
@@ -406,9 +498,21 @@ router.post('/:id/chat', requireAuth, async (req, res) => {
       content: m.content
     }));
     
-    // Get AI response
-    const systemPrompt = generateClarifyingPrompt(item);
-    const aiResult2 = await chat({ messages: claudeMessages, system: systemPrompt }); const aiContent = aiResult2.success ? aiResult2.content : "AI error: " + aiResult2.error;
+    // Fetch RAG context if repo_url is set (use conversation context for query)
+    let ragContext = '';
+    if (item.repo_url) {
+      // Use the last user message + title for more relevant context
+      const contextQuery = `Feature: ${item.title}. User question: ${message.trim()}`;
+      const ragResult = await fetchBacklogRagContext(item, contextQuery);
+      if (ragResult.success) {
+        ragContext = ragResult.context;
+      }
+    }
+    
+    // Get AI response with RAG context
+    const systemPrompt = generateClarifyingPrompt(item, ragContext);
+    const aiResult2 = await chat({ messages: claudeMessages, system: systemPrompt });
+    const aiContent = aiResult2.success ? aiResult2.content : "AI error: " + aiResult2.error;
     
     const aiMessage = {
       role: 'assistant',
@@ -746,6 +850,212 @@ router.post('/bulk-label', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('POST /api/backlog/bulk-label error:', err);
     res.status(500).json({ error: 'Failed to update labels' });
+  }
+});
+
+
+// ============================================================================
+// ATTACHMENT ENDPOINTS
+// ============================================================================
+
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs').promises;
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: async (req, file, cb) => {
+    const dir = `/opt/swarm-app/uploads/${req.user.tenant_id}/${req.params.id}`;
+    try {
+      await fs.mkdir(dir, { recursive: true });
+      cb(null, dir);
+    } catch (err) {
+      cb(err);
+    }
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${uuidv4()}-${file.originalname}`;
+    cb(null, uniqueName);
+  }
+});
+
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'text/markdown',
+      'image/png',
+      'image/jpeg',
+      'image/gif',
+      'image/webp'
+    ];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type ${file.mimetype} not allowed`));
+    }
+  }
+});
+
+
+/**
+ * GET /api/backlog/:id/attachments - List attachments for a backlog item
+ */
+router.get('/:id/attachments', requireAuth, async (req, res) => {
+  try {
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    
+    const attachments = await queryAll(`
+      SELECT id, attachment_type, name, url, mime_type, file_size, git_metadata, created_at
+      FROM backlog_attachments 
+      WHERE backlog_item_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+      ORDER BY created_at DESC
+    `, [req.params.id, req.user.tenant_id]);
+    
+    res.json({ attachments });
+  } catch (err) {
+    console.error('GET /api/backlog/:id/attachments error:', err);
+    res.status(500).json({ error: 'Failed to fetch attachments' });
+  }
+});
+
+
+/**
+ * POST /api/backlog/:id/attachments/file - Upload a file attachment
+ */
+router.post('/:id/attachments/file', requireAuth, upload.single('file'), async (req, res) => {
+  try {
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    const attachmentId = uuidv4();
+    const fileUrl = `/uploads/${req.user.tenant_id}/${req.params.id}/${req.file.filename}`;
+    
+    await execute(`
+      INSERT INTO backlog_attachments 
+        (id, backlog_item_id, tenant_id, attachment_type, name, url, mime_type, file_size, created_by)
+      VALUES ($1, $2, $3, 'file', $4, $5, $6, $7, $8)
+    `, [
+      attachmentId, req.params.id, req.user.tenant_id,
+      req.file.originalname, fileUrl, req.file.mimetype, req.file.size, req.user.id
+    ]);
+    
+    const attachment = await queryOne('SELECT * FROM backlog_attachments WHERE id = $1', [attachmentId]);
+    res.status(201).json({ attachment });
+  } catch (err) {
+    console.error('POST /api/backlog/:id/attachments/file error:', err);
+    res.status(500).json({ error: 'Failed to upload file' });
+  }
+});
+
+
+/**
+ * POST /api/backlog/:id/attachments/link - Add a link (git or external)
+ */
+router.post('/:id/attachments/link', requireAuth, async (req, res) => {
+  try {
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    
+    const { url, name } = req.body;
+    if (!url || !url.trim()) {
+      return res.status(400).json({ error: 'URL is required' });
+    }
+    
+    // Determine if this is a git link
+    const gitPatterns = [
+      /github\.com\/([^\/]+)\/([^\/]+)/,
+      /gitlab\.com\/([^\/]+)\/([^\/]+)/,
+      /bitbucket\.org\/([^\/]+)\/([^\/]+)/
+    ];
+    
+    let attachmentType = 'external_link';
+    let gitMetadata = null;
+    
+    for (const pattern of gitPatterns) {
+      const match = url.match(pattern);
+      if (match) {
+        attachmentType = 'git_link';
+        gitMetadata = {
+          owner: match[1],
+          repo: match[2],
+          platform: url.includes('github') ? 'github' : url.includes('gitlab') ? 'gitlab' : 'bitbucket',
+          type: url.includes('/pull/') || url.includes('/merge_requests/') ? 'pr' :
+                url.includes('/issues/') ? 'issue' : url.includes('/commit/') ? 'commit' : 'repo'
+        };
+        break;
+      }
+    }
+    
+    const attachmentId = uuidv4();
+    const displayName = name?.trim() || (gitMetadata ? `${gitMetadata.owner}/${gitMetadata.repo}` : url);
+    
+    await execute(`
+      INSERT INTO backlog_attachments 
+        (id, backlog_item_id, tenant_id, attachment_type, name, url, git_metadata, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [
+      attachmentId, req.params.id, req.user.tenant_id, attachmentType,
+      displayName, url.trim(), gitMetadata ? JSON.stringify(gitMetadata) : null, req.user.id
+    ]);
+    
+    const attachment = await queryOne('SELECT * FROM backlog_attachments WHERE id = $1', [attachmentId]);
+    res.status(201).json({ attachment });
+  } catch (err) {
+    console.error('POST /api/backlog/:id/attachments/link error:', err);
+    res.status(500).json({ error: 'Failed to add link' });
+  }
+});
+
+
+/**
+ * DELETE /api/backlog/:id/attachments/:attachmentId - Remove an attachment
+ */
+router.delete('/:id/attachments/:attachmentId', requireAuth, async (req, res) => {
+  try {
+    const attachment = await queryOne(`
+      SELECT * FROM backlog_attachments 
+      WHERE id = $1 AND backlog_item_id = $2 AND tenant_id = $3 AND deleted_at IS NULL
+    `, [req.params.attachmentId, req.params.id, req.user.tenant_id]);
+    
+    if (!attachment) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+    
+    // Soft delete
+    await execute('UPDATE backlog_attachments SET deleted_at = NOW() WHERE id = $1', [req.params.attachmentId]);
+    
+    // Delete file from disk if it's a file attachment
+    if (attachment.attachment_type === 'file') {
+      const filePath = `/opt/swarm-app${attachment.url}`;
+      try {
+        await fs.unlink(filePath);
+      } catch (e) {
+        console.warn('Could not delete file:', filePath, e.message);
+      }
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /api/backlog/:id/attachments/:attachmentId error:', err);
+    res.status(500).json({ error: 'Failed to delete attachment' });
   }
 });
 

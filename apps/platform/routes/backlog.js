@@ -17,6 +17,7 @@ const { chat } = require('../services/claude-client');
 const { fetchContext } = require('../services/rag-client');
 const { gatherBacklogContext } = require('../services/context-gatherer');
 const RAG_BASE_URL = process.env.RAG_URL || 'http://localhost:8082';
+const { clarificationAgent } = require('../agents/clarification-agent');
 
 // ============================================================================
 // CONSTANTS
@@ -900,6 +901,25 @@ router.post('/:id/promote', requireAuth, async (req, res) => {
       console.log(`[Promote] Migrated ${chatHistory.length} refinement messages to hitl_messages`);
     }
     
+    // Trigger clarifying agent to analyze refinement history and set progress
+    if (hasRefinementHistory) {
+      try {
+        // Build session object for agent
+        const newSession = {
+          id: sessionId,
+          source_type: 'backlog',
+          chat_history: chatHistory,
+          description: description,
+          project_name: item.title,
+          repo_url: item.repo_url
+        };
+        const agentResult = await clarificationAgent.startSession(newSession);
+        console.log('[Promote] Clarifying agent analyzed chat: progress=' + (agentResult.progress || 0) + '%');
+      } catch (agentErr) {
+        console.error('[Promote] Clarifying agent error (non-fatal):', agentErr.message);
+      }
+    }
+
     // Update backlog item to promoted state
     await execute(`
       UPDATE backlog_items 

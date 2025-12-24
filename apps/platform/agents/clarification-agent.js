@@ -346,6 +346,21 @@ ${session.description || session.project_name || 'Not provided yet'}`;
       initialMessage.message
     );
 
+    // Save clarification context and progress to database
+    if (initialMessage.gathered || initialMessage.progress) {
+      const context = {
+        gathered: initialMessage.gathered || this.initializeContext().gathered,
+        overallProgress: initialMessage.progress || 0,
+        readyForSpec: initialMessage.readyForSpec || false
+      };
+      await execute(`
+        UPDATE hitl_sessions 
+        SET clarification_context = $1, progress_percent = $2, updated_at = NOW()
+        WHERE id = $3
+      `, [JSON.stringify(context), initialMessage.progress || 0, session.id]);
+      console.log(`[ClarificationAgent] Saved initial context: progress=${initialMessage.progress}%`);
+    }
+
     return initialMessage;
   }
 

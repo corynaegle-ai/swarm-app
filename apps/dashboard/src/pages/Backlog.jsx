@@ -59,7 +59,7 @@ export default function Backlog() {
   // Fetch backlog items
   const fetchItems = async () => {
     try {
-      const url = filter === 'all' ? '/api/backlog' : `/api/backlog?state=${filter}`;
+      const url = `/api/backlog?state=${filter}`; // Always pass state, including 'all'
       const res = await apiCall(url);
       if (res.ok) {
         const data = await res.json();

@@ -199,7 +199,10 @@ router.get('/', requireAuth, async (req, res) => {
     let paramIndex = 2;
     
     // Filter by state
-    if (state && VALID_STATES.includes(state)) {
+    if (state === 'all') {
+      // 'all' means everything except archived
+      sql += ` AND state != 'archived'`;
+    } else if (state && VALID_STATES.includes(state)) {
       sql += ` AND state = $${paramIndex++}`;
       params.push(state);
     } else {
@@ -238,7 +241,10 @@ router.get('/', requireAuth, async (req, res) => {
     // Get total count for pagination
     let countSql = 'SELECT COUNT(*) as total FROM backlog_items WHERE tenant_id = $1';
     const countParams = [tenantId];
-    if (state && VALID_STATES.includes(state)) {
+    if (state === 'all') {
+      // 'all' means everything except archived
+      sql += ` AND state != 'archived'`;
+    } else if (state && VALID_STATES.includes(state)) {
       countSql += ' AND state = $2';
       countParams.push(state);
     } else {

@@ -45,6 +45,7 @@ export default function Backlog() {
   // Modals
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
+  const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
   const [skipClarification, setSkipClarification] = useState(false);
 
   // Attachment states
@@ -205,7 +206,7 @@ export default function Backlog() {
 
   // Send chat message
   const handleSendMessage = async () => {
-    if (!chatInput.trim() || !selectedItem) return;
+    if (!chatInput.trim() || !selectedItem || chatLoading) return;
     
     const userMessage = chatInput.trim();
     setChatInput('');
@@ -882,7 +883,7 @@ export default function Backlog() {
               <div className="chat-actions">
                 <button 
                   className="btn-danger"
-                  onClick={handleAbandonChat}
+                  onClick={() => setShowAbandonConfirm(true)}
                   disabled={actionLoading}
                 >
                   <X size={16} />

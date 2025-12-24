@@ -340,17 +340,6 @@ export default function Backlog() {
     });
   };
 
-  // Filter counts
-  const getCounts = () => {
-    const all = items.length;
-    const draft = items.filter(i => i.state === 'draft').length;
-    const chatting = items.filter(i => i.state === 'chatting').length;
-    const refined = items.filter(i => i.state === 'refined').length;
-    const promoted = items.filter(i => i.state === 'promoted').length;
-    return { all, draft, chatting, refined, promoted };
-  };
-
-  const counts = getCounts();
   const filteredItems = filter === 'all' 
     ? items 
     : items.filter(i => i.state === filter);

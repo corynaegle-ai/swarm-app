@@ -189,7 +189,7 @@ export default function Backlog() {
       if (res.ok) {
         const data = await res.json();
         setSelectedItem(data.item);
-        setChatHistory(data.item.chat_history || []);
+        setChatHistory(data.chat_history || data.item.chat_transcript || []);
         setChatMode(true);
         toast.success('Refinement chat started');
         fetchItems();

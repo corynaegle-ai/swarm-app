@@ -1,165 +1,74 @@
-require("dotenv").config();
-/**
- * Swarm Platform - Unified Backend API
- * Consolidates swarm-tickets + swarm-api into single service
- */
-
 const express = require('express');
 const cors = require('cors');
-const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { closeDb } = require('./db');
-const { initWebSocket, getStats: getWsStats } = require('./websocket');
+const { json, urlencoded } = require('express');
+const path = require('path');
 
-// Initialize Express
+// Import route modules
+const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/users');
+const tenantRoutes = require('./routes/tenants');
+
 const app = express();
-const PORT = process.env.PORT || 8080;
-app.set('trust proxy', 1);
+const PORT = process.env.PORT || 3000;
 
-// Security headers
+// Security middleware
 app.use(helmet());
-
-// Rate limiting - 100 requests per 15 minutes per IP
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later' }
-});
-
-// Stricter limit for auth endpoints
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many auth attempts, please try again later' }
-});
-
-// CORS configuration
-const allowedOrigins = process.env.CORS_ORIGINS
-  ? process.env.CORS_ORIGINS.split(',')
-  : ['https://swarmstack.net', 'https://dashboard.swarmstack.net', 'http://localhost:3000', 'http://localhost:5173', 'https://dashboard.dev.swarmstack.net', 'https://dev.swarmstack.net'];
-
 app.use(cors({
-  origin: allowedOrigins,
+  origin: process.env.FRONTEND_URL || 'http://localhost:3001',
   credentials: true
 }));
 
-// Body parsing with explicit limit
-app.use(express.json({ limit: '1mb' }));
-app.use(cookieParser());
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.'
+});
+app.use('/api/', limiter);
 
-// Request logging
-app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    console.log(`${new Date().toISOString()} ${req.method} ${req.path} ${res.statusCode} ${duration}ms`);
+// Body parsing middleware
+app.use(json({ limit: '10mb' }));
+app.use(urlencoded({ extended: true, limit: '10mb' }));
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// API routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/tenants', tenantRoutes);
+
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../frontend/build')));
+  
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/build/index.html'));
   });
-  next();
-});
-
-// Import routes
-const healthRoutes = require('./routes/health');
-const authRoutes = require('./routes/auth');
-const vmRoutes = require('./routes/vms');
-const ticketRoutes = require('./routes/tickets');
-const projectRoutes = require('./routes/projects');
-const designRoutes = require('./routes/design');
-const hitlRoutes = require('./routes/hitl');
-const secretsRoutes = require('./routes/secrets');
-const aiRoutes = require('./routes/ai');
-const devRoutes = require('./routes/dev');
-const swarmRoutes = require('./routes/swarm');
-const repoRoutes = require('./routes/repo');
-const agentsRoutes = require('./routes/agents');
-const learningRoutes = require('./routes/learning');
-const mcpRoutes = require('./routes/mcp');
-const internalRoutes = require('./routes/internal');
-const registryRoutes = require('./routes/agents-registry');
-const backlogRoutes = require('./routes/backlog');
-
-// Dev API rate limiter - more generous for development work
-const devLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 500,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many dev API requests' }
-});
-
-// Mount routes with rate limiting
-app.use('/health', healthRoutes);
-app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/vms', apiLimiter, vmRoutes);
-app.use('/api/tickets', apiLimiter, ticketRoutes);
-app.use('/api/projects', apiLimiter, projectRoutes);
-app.use('/api/design-sessions', apiLimiter, designRoutes);
-app.use('/api/hitl', apiLimiter, hitlRoutes);
-app.use('/api/secrets', apiLimiter, secretsRoutes);
-app.use('/api/ai', apiLimiter, aiRoutes);
-app.use('/api/dev', devLimiter, devRoutes);
-app.use('/api/swarm', apiLimiter, swarmRoutes);
-app.use('/api/repo', apiLimiter, repoRoutes);
-app.use('/api/agents', apiLimiter, agentsRoutes);
-app.use('/api/learning', apiLimiter, learningRoutes);
-app.use('/api/mcp', apiLimiter, mcpRoutes);
-app.use("/api/backlog", apiLimiter, backlogRoutes);
-app.use('/api/registry', apiLimiter, registryRoutes);
-// Serve uploaded files with tenant isolation
-const { requireAuth } = require("./middleware/auth");
-app.use("/uploads", requireAuth, async (req, res, next) => {
-  const pathParts = req.path.split("/");
-  const pathTenantId = pathParts[1];
-  if (pathTenantId !== req.user.tenant_id) {
-    return res.status(403).json({ error: "Access denied" });
-  }
-  next();
-}, express.static("/opt/swarm-app/uploads"));
-
-app.use("/api/internal", internalRoutes);
-// Legacy ticket routes (agent endpoints)
-const legacyTicketRoutes = require('./routes/tickets-legacy');
-app.use('/', legacyTicketRoutes);
+}
 
 // Global error handler
-app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal server error'
+app.use((error, req, res, next) => {
+  console.error('Unhandled error:', error);
+  res.status(500).json({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
   });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Not found' });
+// Handle 404
+app.use('*', (req, res) => {
+  res.status(404).json({ error: 'Route not found' });
 });
 
 // Start server
-const server = app.listen(PORT, () => {
-  // Initialize WebSocket server
-  initWebSocket(server);
-  console.log(`Swarm Platform running on port ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`Platform server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
-// Graceful shutdown
-function shutdown(signal) {
-  console.log(`${signal} received, shutting down gracefully...`);
-  server.close(() => {
-    console.log('HTTP server closed');
-    closeDb();
-    process.exit(0);
-  });
-
-  // Force exit after 10s if connections don't drain
-  setTimeout(() => {
-    console.error('Forced shutdown after timeout');
-    process.exit(1);
-  }, 10000);
-}
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+module.exports = app;

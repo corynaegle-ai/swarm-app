@@ -117,6 +117,17 @@ ${formatAcceptanceCriteria(ticket.acceptance_criteria)}
     prompt += `\n**Files Hint:** ${ticket.files_hint}\n`;
   }
   
+  // Inject sentinel feedback if this is a retry attempt
+  const sentinelFeedbackSection = formatSentinelFeedback(ticket);
+  if (sentinelFeedbackSection) {
+    prompt += sentinelFeedbackSection;
+    log.info('Injected sentinel feedback into prompt', { 
+        ticketId: ticket.id, 
+        retryCount: ticket.retry_count,
+        promptLength: prompt.length 
+    });
+  }
+  
   // Add RAG context if available
   if (ragContext) {
     prompt += `\n## Existing Codebase Context\n`;
@@ -197,6 +208,54 @@ function formatAcceptanceCriteria(criteria) {
   } catch {
     return `- ${criteria}`;
   }
+}
+
+/**
+ * Format sentinel feedback for injection into forge agent prompt
+ * @param {Object} ticket - Ticket object with sentinel_feedback and retry_count
+ * @returns {string} Formatted feedback section or empty string
+ */
+function formatSentinelFeedback(ticket) {
+    if (!ticket.sentinel_feedback) return '';
+    
+    const feedback = typeof ticket.sentinel_feedback === 'string' 
+        ? JSON.parse(ticket.sentinel_feedback) 
+        : ticket.sentinel_feedback;
+    
+    const feedbackItems = feedback.feedback_for_agent || [];
+    if (feedbackItems.length === 0) return '';
+    
+    const attempt = (ticket.retry_count || 0) + 1;
+    const maxAttempts = 3;
+    
+    log.info('Formatting sentinel feedback for prompt injection', { 
+        ticketId: ticket.id, 
+        attempt, 
+        issueCount: feedbackItems.length 
+    });
+    
+    return `
+
+## ⚠️ PREVIOUS ATTEMPT REJECTED - MUST FIX THESE ISSUES
+
+Your previous implementation was rejected by the code review sentinel.
+This is attempt ${attempt} of ${maxAttempts}.
+
+**You MUST address ALL of the following issues:**
+
+${feedbackItems.map((item, i) => `${i + 1}. ${item}`).join('\n')}
+
+**CRITICAL REQUIREMENTS**:
+- Do NOT repeat the same mistakes
+- Address each issue explicitly in your implementation
+- Add inline comments showing how you fixed each issue
+- If an issue mentions missing validation → ADD validation
+- If an issue mentions security → ADD security measures
+- If an issue mentions error handling → ADD proper error handling
+- If an issue mentions accessibility → ADD ARIA attributes
+
+**FAILURE TO ADDRESS THESE ISSUES WILL RESULT IN REJECTION.**
+`;
 }
 
 

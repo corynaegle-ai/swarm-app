@@ -8,6 +8,7 @@ const learningQueries = require('../lib/learning-queries.js');
 const PatternDetector = require('../lib/pattern-detector.js');
 const { RuleGenerator } = require('../lib/rule-generator.js');
 const { requireAuth } = require('../middleware/auth');
+const agentLearning = require('../lib/agent-learning.js');
 
 // All routes require authentication
 router.use(requireAuth);
@@ -132,6 +133,21 @@ router.post('/rules/generate', (req, res) => {
     res.json({ generated: rules.length, saved: results });
   } catch (err) { res.status(500).json({ error: err.message }); }
   finally { detector.close(); generator.close(); }
+});
+
+
+/**
+ * POST /api/learning/log
+ * Log a completed agent execution
+ */
+router.post('/log', async (req, res) => {
+  try {
+    const result = await agentLearning.logExecution(req.body);
+    res.json({ success: true, executionId: result.executionId });
+  } catch (err) {
+    console.error('Learning log error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

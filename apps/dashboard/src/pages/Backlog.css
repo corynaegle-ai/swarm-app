@@ -958,3 +958,4 @@
   color: #71717a;
   font-size: 0.75rem;
 }
+.hitl-actions { display: flex; gap: 0.75rem; margin-top: 1rem; }

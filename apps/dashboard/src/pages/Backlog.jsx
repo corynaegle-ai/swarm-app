@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { apiCall, getAuthToken } from '../utils/api';
+import { apiCall } from '../utils/api';
 import Sidebar from '../components/Sidebar';
 import {
   Lightbulb, Plus, MessageSquare, Sparkles, ArrowRight, Trash2,
@@ -46,6 +46,7 @@ export default function Backlog() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
+  const [showUnpromoteConfirm, setShowUnpromoteConfirm] = useState(false);
   const [skipClarification, setSkipClarification] = useState(false);
 
   // Attachment states
@@ -288,6 +289,31 @@ export default function Backlog() {
     }
   };
 
+  // Unpromote - abandon HITL session and return to draft
+  const handleUnpromote = async () => {
+    if (!selectedItem) return;
+    
+    setActionLoading('unpromote');
+    try {
+      const res = await apiCall(`/api/backlog/${selectedItem.id}/unpromote`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        toast.success('HITL session abandoned, returned to draft');
+        setShowUnpromoteConfirm(false);
+        setSelectedItem(null);
+        fetchItems();
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Failed to unpromote');
+      }
+    } catch (err) {
+      toast.error('Network error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Promote to HITL session
   const handlePromote = async () => {
     if (!selectedItem) return;
@@ -387,11 +413,10 @@ export default function Backlog() {
     
     try {
       setUploadProgress(10);
-      const token = getAuthToken();
-      const res = await fetch(`/api/backlog/${selectedItem.id}/attachments/file`, {
+      
+      const res = await apiCall(`/api/backlog/${selectedItem.id}/attachments/file`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
+        body: formData  // apiCall now handles FormData correctly
       });
       
       setUploadProgress(90);
@@ -730,13 +755,22 @@ export default function Backlog() {
                   <h2>{selectedItem.title}</h2>
                   <p>{selectedItem.enriched_description || selectedItem.description}</p>
                   {selectedItem.hitl_session_id && (
-                    <button 
-                      className="btn-primary"
-                      onClick={() => navigate(`/design/${selectedItem.hitl_session_id}`)}
-                    >
-                      <ExternalLink size={16} />
-                      Go to HITL Session
-                    </button>
+                    <div className="hitl-actions">
+                      <button 
+                        className="btn-primary"
+                        onClick={() => navigate(`/design/${selectedItem.hitl_session_id}`)}
+                      >
+                        <ExternalLink size={16} />
+                        Go to HITL Session
+                      </button>
+                      <button 
+                        className="btn-danger"
+                        onClick={() => setShowUnpromoteConfirm(true)}
+                      >
+                        <X size={16} />
+                        Abandon
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -981,6 +1015,38 @@ export default function Backlog() {
           </div>
         )}
 
+
+        {/* Unpromote Confirmation Modal */}
+        {showUnpromoteConfirm && selectedItem && (
+          <div className="modal-overlay" onClick={() => setShowUnpromoteConfirm(false)}>
+            <div className="modal confirm-modal" onClick={e => e.stopPropagation()}>
+              <div className="confirm-icon danger">
+                <X size={32} />
+              </div>
+              <h3>Abandon this HITL session?</h3>
+              <p>The HITL session will be deleted and "{selectedItem.title}" will return to draft state.</p>
+              <div className="modal-actions">
+                <button 
+                  className="btn-secondary"
+                  onClick={() => setShowUnpromoteConfirm(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="btn-danger"
+                  onClick={handleUnpromote}
+                  disabled={actionLoading === 'unpromote'}
+                >
+                  {actionLoading === 'unpromote' ? (
+                    <><Loader2 size={16} className="spin" /> Abandoning...</>
+                  ) : (
+                    <>Abandon Session</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Promote Modal */}
         {showPromoteModal && selectedItem && (

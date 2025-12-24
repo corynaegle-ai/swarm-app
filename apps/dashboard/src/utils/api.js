@@ -38,15 +38,18 @@ export function clearAuthToken() {
  * @param {Object} options - Fetch options
  * @param {string} [options.method='GET'] - HTTP method
  * @param {Object} [options.headers] - Additional headers
- * @param {Object|string} [options.body] - Request body
+ * @param {Object|string|FormData} [options.body] - Request body
  * @param {boolean} [options.skipAuth=false] - Skip adding Authorization header
  * @returns {Promise<Response>} Fetch response object
  */
 export async function apiCall(endpoint, options = {}) {
   const token = getAuthToken();
+  
+  // Don't set Content-Type for FormData (browser sets it with boundary)
+  const isFormData = options.body instanceof FormData;
 
   const headers = {
-    'Content-Type': 'application/json',
+    ...(!isFormData && { 'Content-Type': 'application/json' }),
     ...(token && !options.skipAuth && { 'Authorization': `Bearer ${token}` }),
     ...options.headers
   };

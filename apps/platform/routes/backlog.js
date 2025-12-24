@@ -689,6 +689,60 @@ router.post('/:id/abandon-chat', requireAuth, async (req, res) => {
 });
 // ============================================================================
 
+
+/**
+ * POST /api/backlog/:id/unpromote - Abandon HITL session and return to draft
+ * 
+ * Resets a promoted backlog item back to draft state.
+ * Optionally deletes the associated HITL session.
+ */
+router.post('/:id/unpromote', requireAuth, async (req, res) => {
+  try {
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    
+    if (item.state !== 'promoted') {
+      return res.status(400).json({ error: 'Item is not in promoted state' });
+    }
+    
+    // Delete the HITL session if it exists
+    if (item.hitl_session_id) {
+      await execute(`
+        DELETE FROM hitl_sessions 
+        WHERE id = $1 AND tenant_id = $2
+      `, [item.hitl_session_id, req.user.tenant_id]);
+    }
+    
+    // Reset backlog item to draft
+    await execute(`
+      UPDATE backlog_items 
+      SET state = 'draft', 
+          hitl_session_id = NULL,
+          chat_transcript = NULL,
+          chat_started_at = NULL,
+          enriched_description = NULL
+      WHERE id = $1 AND tenant_id = $2
+    `, [req.params.id, req.user.tenant_id]);
+    
+    broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:updated', {
+      id: req.params.id,
+      changes: { state: 'draft', hitl_session_id: null }
+    });
+    
+    const updatedItem = await getBacklogItem(req.params.id, req.user.tenant_id);
+    
+    res.json({
+      success: true,
+      item: updatedItem
+    });
+  } catch (err) {
+    console.error('POST /api/backlog/:id/unpromote error:', err);
+    res.status(500).json({ error: 'Failed to unpromote item' });
+  }
+});
+
 /**
  * POST /api/backlog/:id/promote - Convert backlog item to HITL session
  * 

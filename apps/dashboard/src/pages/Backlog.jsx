@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { apiCall } from '../utils/api';
+import { apiCall, getAuthToken } from '../utils/api';
 import Sidebar from '../components/Sidebar';
 import {
   Lightbulb, Plus, MessageSquare, Sparkles, ArrowRight, Trash2,
@@ -378,7 +378,7 @@ export default function Backlog() {
     
     try {
       setUploadProgress(10);
-      const token = localStorage.getItem('token');
+      const token = getAuthToken();
       const res = await fetch(`/api/backlog/${selectedItem.id}/attachments/file`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },

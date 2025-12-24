@@ -29,6 +29,7 @@ export default function Backlog() {
   const [chatMode, setChatMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null);
+  const [counts, setCounts] = useState({ all: 0, draft: 0, chatting: 0, refined: 0, promoted: 0 });
 
   // Form states
   const [quickTitle, setQuickTitle] = useState('');
@@ -58,11 +59,12 @@ export default function Backlog() {
   // Fetch backlog items
   const fetchItems = async () => {
     try {
-      const url = '/api/backlog'; // Always fetch all, filter client-side
+      const url = filter === 'all' ? '/api/backlog' : `/api/backlog?state=${filter}`;
       const res = await apiCall(url);
       if (res.ok) {
         const data = await res.json();
         setItems(data.items || []);
+        if (data.stateCounts) setCounts(data.stateCounts);
       } else {
         toast.error('Failed to load backlog items');
       }
@@ -73,7 +75,7 @@ export default function Backlog() {
     }
   };
 
-  useEffect(() => { fetchItems(); }, []); // Fetch once on mount, filter client-side
+  useEffect(() => { fetchItems(); }, [filter]);
 
   // Fetch available repos for selection
   useEffect(() => {
@@ -744,6 +746,56 @@ export default function Backlog() {
               )}
 
               
+
+              {/* Attachments Section */}
+              <div className="backlog-attachments">
+                <div className="attachments-header">
+                  <h4><Paperclip size={14} /> Attachments ({attachments.length})</h4>
+                  <button 
+                    className="btn-icon"
+                    onClick={() => setShowAttachmentModal(true)}
+                    title="Add attachment"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </div>
+                
+                {attachments.length === 0 ? (
+                  <p className="no-attachments">No attachments yet</p>
+                ) : (
+                  <ul className="attachment-list">
+                    {attachments.map(att => (
+                      <li key={att.id} className={`attachment-item type-${att.attachment_type}`}>
+                        <span className="attachment-icon">{getAttachmentIcon(att)}</span>
+                        <a 
+                          href={att.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="attachment-name"
+                        >
+                          {att.name}
+                        </a>
+                        {att.file_size && (
+                          <span className="attachment-size">
+                            {(att.file_size / 1024).toFixed(1)}KB
+                          </span>
+                        )}
+                        {att.git_metadata && (
+                          <span className="git-badge">{att.git_metadata.type}</span>
+                        )}
+                        <button 
+                          className="btn-icon delete"
+                          onClick={() => handleDeleteAttachment(att.id)}
+                          title="Remove"
+                        >
+                          <X size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
               {selectedItem.state !== 'promoted' && (
                 <div className="modal-actions">
                   <button 
@@ -937,6 +989,92 @@ export default function Backlog() {
             </div>
           </div>
         )}
+
+
+      {/* Attachment Modal */}
+      {showAttachmentModal && selectedItem && (
+        <div className="modal-overlay" onClick={() => setShowAttachmentModal(false)}>
+          <div className="modal attachment-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Add Attachment</h3>
+              <button className="btn-icon" onClick={() => setShowAttachmentModal(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="attachment-tabs">
+              <button 
+                className={attachmentTab === 'upload' ? 'active' : ''}
+                onClick={() => setAttachmentTab('upload')}
+              >
+                <Upload size={16} /> Upload File
+              </button>
+              <button 
+                className={attachmentTab === 'link' ? 'active' : ''}
+                onClick={() => setAttachmentTab('link')}
+              >
+                <Link2 size={16} /> Add Link
+              </button>
+            </div>
+            
+            <div className="attachment-content">
+              {attachmentTab === 'upload' ? (
+                <div className="upload-zone">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
+                    style={{ display: 'none' }}
+                  />
+                  <button 
+                    className="upload-btn"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload size={24} />
+                    <span>Choose file or drag & drop</span>
+                    <small>PDF, DOC, TXT, MD, PNG, JPG, GIF (max 10MB)</small>
+                  </button>
+                  {uploadProgress > 0 && (
+                    <div className="upload-progress">
+                      <div style={{ width: `${uploadProgress}%` }} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="link-form">
+                  <div className="form-group">
+                    <label>URL *</label>
+                    <input
+                      type="url"
+                      value={linkUrl}
+                      onChange={e => setLinkUrl(e.target.value)}
+                      placeholder="https://github.com/org/repo or any URL"
+                    />
+                    <small>GitHub, GitLab, Bitbucket links will be auto-detected</small>
+                  </div>
+                  <div className="form-group">
+                    <label>Display Name (optional)</label>
+                    <input
+                      type="text"
+                      value={linkName}
+                      onChange={e => setLinkName(e.target.value)}
+                      placeholder="My Reference Repo"
+                    />
+                  </div>
+                  <button 
+                    className="btn-primary"
+                    onClick={handleAddLink}
+                    disabled={!linkUrl.trim()}
+                  >
+                    Add Link
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       </main>
     </div>

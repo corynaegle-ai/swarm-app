@@ -246,11 +246,25 @@ router.get('/', requireAuth, async (req, res) => {
     }
     const countResult = await queryOne(countSql, countParams);
     
+    // Get counts by state for all filter tabs
+    const stateCountsResult = await queryAll(
+      "SELECT state, COUNT(*)::int as count FROM backlog_items WHERE tenant_id = $1 GROUP BY state",
+      [tenantId]
+    );
+    const stateCounts = { all: 0, draft: 0, chatting: 0, refined: 0, promoted: 0 };
+    stateCountsResult.forEach(row => {
+      if (stateCounts.hasOwnProperty(row.state)) {
+        stateCounts[row.state] = row.count;
+        stateCounts.all += row.count;
+      }
+    });
+    
     res.json({
       items,
       total: parseInt(countResult.total),
       limit: parseInt(limit),
-      offset: parseInt(offset)
+      offset: parseInt(offset),
+      stateCounts
     });
   } catch (err) {
     console.error('GET /api/backlog error:', err);

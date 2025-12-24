@@ -861,8 +861,8 @@ router.post('/:id/promote', requireAuth, async (req, res) => {
     await execute(`
       INSERT INTO hitl_sessions (
         id, tenant_id, type, state, project_name, description, 
-        chat_history, source_type, backlog_item_id, created_at, updated_at
-      ) VALUES ($1, $2, 'design', $3, $4, $5, $6, 'backlog', $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        chat_history, source_type, backlog_item_id, repo_url, created_at, updated_at
+      ) VALUES ($1, $2, 'design', $3, $4, $5, $6, 'backlog', $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `, [
       sessionId,
       req.user.tenant_id,
@@ -870,8 +870,28 @@ router.post('/:id/promote', requireAuth, async (req, res) => {
       item.title,
       description,
       JSON.stringify(chatHistory),
-      req.params.id
+      req.params.id,
+      item.repo_url || null  // Pass repo_url from backlog item
     ]);
+    
+    // Insert refinement chat messages into hitl_messages table
+    // This ensures buildConversationHistory() finds the prior context
+    if (chatHistory.length > 0) {
+      const { v4: uuidv4Gen } = require('uuid');
+      for (const msg of chatHistory) {
+        await execute(`
+          INSERT INTO hitl_messages (id, session_id, role, content, created_at)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [
+          uuidv4Gen ? uuidv4Gen() : uuidv4(),
+          sessionId,
+          msg.role,
+          msg.content,
+          msg.timestamp ? new Date(msg.timestamp) : new Date()
+        ]);
+      }
+      console.log(`[Promote] Migrated ${chatHistory.length} refinement messages to hitl_messages`);
+    }
     
     // Update backlog item to promoted state
     await execute(`

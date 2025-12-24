@@ -58,7 +58,7 @@ export default function Backlog() {
   // Fetch backlog items
   const fetchItems = async () => {
     try {
-      const url = filter === 'all' ? '/api/backlog' : `/api/backlog?state=${filter}`;
+      const url = '/api/backlog'; // Always fetch all, filter client-side
       const res = await apiCall(url);
       if (res.ok) {
         const data = await res.json();
@@ -73,7 +73,7 @@ export default function Backlog() {
     }
   };
 
-  useEffect(() => { fetchItems(); }, [filter]);
+  useEffect(() => { fetchItems(); }, []); // Fetch once on mount, filter client-side
 
   // Fetch available repos for selection
   useEffect(() => {

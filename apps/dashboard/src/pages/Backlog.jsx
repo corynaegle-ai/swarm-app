@@ -340,9 +340,7 @@ export default function Backlog() {
     });
   };
 
-  const filteredItems = filter === 'all' 
-    ? items 
-    : items.filter(i => i.state === filter);
+  const filteredItems = items; // Server already filters based on state
 
   // Render
 

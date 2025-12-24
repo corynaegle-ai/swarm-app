@@ -842,8 +842,11 @@ export default function Backlog() {
                         onClick={() => handleStartChat(selectedItem)}
                         disabled={actionLoading}
                       >
-                        <MessageSquare size={16} />
-                        Start Refinement
+                        {actionLoading === `start-${selectedItem.id}` ? (
+                          <><Loader2 size={16} className="spin" /> Gathering context...</>
+                        ) : (
+                          <><MessageSquare size={16} /> Start Refinement</>
+                        )}
                       </button>
                     )}
                     <button 

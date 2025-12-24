@@ -1,124 +1,49 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
-import ProtectedRoute from './components/ProtectedRoute';
-import Dashboard from './pages/Dashboard';
-import AdminUsers from './pages/AdminUsers';
-import Secrets from './pages/Secrets';
-import CreateProject from './pages/CreateProject';
-import DesignSession from './pages/DesignSession';
-import SpecReview from './pages/SpecReview';
-import BuildProgress from './pages/BuildProgress';
-import VMs from './pages/VMs';
-import Tickets from './pages/Tickets';
-import TicketDetail from './pages/TicketDetail';
-import KanbanBoard from './pages/KanbanBoard';
-import AgentMonitor from './pages/AgentMonitor';
-import AgentCatalog from './pages/AgentCatalog';
-import LearningDashboard from './pages/LearningDashboard';
-import AgentDetail from './pages/AgentDetail';
-import SignIn from './pages/SignIn';
-import McpFactory from './pages/McpFactory';
-import Backlog from './pages/Backlog';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { Navigation } from './components/Navigation';
+import { Dashboard } from './pages/Dashboard';
+import { Login } from './pages/Login';
+import { Profile } from './pages/Profile';
+import { AdminUsers } from './pages/AdminUsers';
+import { AdminTenants } from './pages/AdminTenants';
 import './App.css';
-import './layout.css';
-import './agent-catalog.css';
 
 function App() {
-
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/signin" element={<SignIn />} />
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/tickets" element={
-            <ProtectedRoute>
-              <Tickets />
-            </ProtectedRoute>
-          } />
-          <Route path="/tickets/kanban" element={
-            <ProtectedRoute>
-              <KanbanBoard />
-            </ProtectedRoute>
-          } />
-          <Route path="/tickets/:ticketId" element={
-            <ProtectedRoute>
-              <TicketDetail />
-            </ProtectedRoute>
-          } />
-          <Route path="/vms" element={
-            <ProtectedRoute>
-              <VMs />
-            </ProtectedRoute>
-          } />
-          <Route path="/agents/catalog" element={
-            <ProtectedRoute>
-              <AgentCatalog />
-            </ProtectedRoute>
-          } />
-          <Route path="/agents/catalog/:id" element={
-            <ProtectedRoute>
-              <AgentDetail />
-            </ProtectedRoute>
-          } />
-          <Route path="/agents" element={
-            <ProtectedRoute>
-              <AgentMonitor />
-            </ProtectedRoute>
-          } />
-          <Route path="/projects/new" element={
-            <ProtectedRoute>
-              <CreateProject />
-            </ProtectedRoute>
-          } />
-          <Route path="/design/:sessionId" element={
-            <ProtectedRoute>
-              <DesignSession />
-            </ProtectedRoute>
-          } />
-          <Route path="/review/:sessionId" element={
-            <ProtectedRoute>
-              <SpecReview />
-            </ProtectedRoute>
-          } />
-          <Route path="/build/:sessionId" element={
-            <ProtectedRoute>
-              <BuildProgress />
-            </ProtectedRoute>
-          } />
-          <Route path="/admin/users" element={
-            <ProtectedRoute adminOnly>
-              <AdminUsers />
-            </ProtectedRoute>
-          } />
-          <Route path="/secrets" element={
-            <ProtectedRoute adminOnly>
-              <Secrets />
-            </ProtectedRoute>
-          } />
-          <Route path="/learning" element={
-            <ProtectedRoute>
-              <LearningDashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/backlog" element={
-            <ProtectedRoute>
-              <Backlog />
-            </ProtectedRoute>
-          } />
-          <Route path="/mcp-factory" element={
-            <ProtectedRoute>
-              <McpFactory />
-            </ProtectedRoute>
-          } />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </BrowserRouter>
+      <Router>
+        <div className="app">
+          <Navigation />
+          <main className="main-content">
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/" element={
+                <ProtectedRoute>
+                  <Dashboard />
+                </ProtectedRoute>
+              } />
+              <Route path="/profile" element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/users" element={
+                <ProtectedRoute requireAdmin>
+                  <AdminUsers />
+                </ProtectedRoute>
+              } />
+              <Route path="/admin/tenants" element={
+                <ProtectedRoute requireAdmin>
+                  <AdminTenants />
+                </ProtectedRoute>
+              } />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </main>
+        </div>
+      </Router>
     </AuthProvider>
   );
 }

@@ -16,6 +16,17 @@ const { generateTicketsFromSpec } = require('../services/ticket-generator');
 const { analyzeRepository } = require('../services/repoAnalysis');
 const { checkReposStatus, indexRepository } = require("../services/rag-client");
 
+// Generate feature branch name from spec title
+function generateBranchName(specTitle, projectName) {
+  const base = (specTitle || projectName || 'feature')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, 50);
+  const timestamp = Date.now().toString(36);
+  return `feature/${base}-${timestamp}`;
+}
+
 // GET /api/hitl/meta/states - State machine metadata
 router.get('/meta/states', (req, res) => {
   res.json({ 
@@ -356,6 +367,7 @@ router.post('/:sessionId/start-build', async (req, res) => {
 
     // === STEP 1: Create or get project ===
     let projectId = session.project_id;
+    const branchName = generateBranchName(specCard.title, session.project_name);
     
     if (!projectId) {
       projectId = uuidv4();
@@ -368,7 +380,7 @@ router.post('/:sessionId/start-build', async (req, res) => {
         specCard.title || session.project_name || 'Untitled Project',
         specCard.summary || session.description || '',
         session.repo_url || '',
-        'main',
+        branchName,
         session.tenant_id,
         session.project_type || 'generic'
       ]);
@@ -387,7 +399,7 @@ router.post('/:sessionId/start-build', async (req, res) => {
     broadcast.sessionUpdate(req.params.sessionId, 'building', 90);
 
     // === STEP 3: Generate tickets from spec ===
-    const ticketResult = await generateTicketsFromSpec(req.params.sessionId, projectId);
+    const ticketResult = await generateTicketsFromSpec(req.params.sessionId, projectId, branchName);
     
     if (!ticketResult.success) {
       await execute(`

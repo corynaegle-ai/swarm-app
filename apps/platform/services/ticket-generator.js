@@ -82,7 +82,7 @@ function validateTicketQuality(ticket, isExistingRepo = true) {
  * @param {string} projectId - Project ID to attach tickets to
  * @returns {Promise<{success: boolean, tickets: Array, error?: string}>}
  */
-async function generateTicketsFromSpec(sessionId, projectId) {
+async function generateTicketsFromSpec(sessionId, projectId, branchName = null) {
   // Get session with spec_card
   const session = await queryOne('SELECT * FROM hitl_sessions WHERE id = $1', [sessionId]);
   if (!session) {

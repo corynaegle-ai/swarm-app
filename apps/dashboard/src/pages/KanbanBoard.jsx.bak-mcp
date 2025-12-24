@@ -3,14 +3,13 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Bot, User, Clock, Settings } from 'lucide-react';
+import { Bot, User, Clock } from 'lucide-react';
 import { getRelativeTime } from '../utils/time';
 import { useAuth } from '../context/AuthContext';
 import './KanbanBoard.css';
 import Sidebar from '../components/Sidebar';
 import useTickets from '../hooks/useTickets';
 import { useWebSocket } from '../hooks/useWebSocket';
-import ProjectMCPSettings from '../components/ProjectMCPSettings';
 
 const STATE_CONFIG = {
   draft: { label: 'Draft', color: '#6b7280', bg: 'rgba(107, 114, 128, 0.15)' },
@@ -49,7 +48,6 @@ export default function KanbanBoard() {
   const [localError, setLocalError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
-  const [showMCPSettings, setShowMCPSettings] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState(DEFAULT_VISIBLE);
   
   // Drag state
@@ -201,15 +199,6 @@ export default function KanbanBoard() {
             >
               <span className="refresh-icon">↻</span>
             </button>
-            {filterProject && (
-              <button
-                className="settings-btn"
-                onClick={() => setShowMCPSettings(true)}
-                title="Project MCP Settings"
-              >
-                <Settings size={16} />
-              </button>
-            )}
             <Link to="/tickets" className="view-toggle">
               <span>📊</span> List View
             </Link>
@@ -412,19 +401,6 @@ export default function KanbanBoard() {
           }
           .refresh-btn:hover { border-color: #00d4ff; color: #00d4ff; }
           .refresh-btn.spinning .refresh-icon { animation: spin 1s linear infinite; }
-          .settings-btn {
-            background: transparent;
-            border: 1px solid #333;
-            color: #888;
-            padding: 0.5rem;
-            border-radius: 8px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          .settings-btn:hover { border-color: #00d4ff; color: #00d4ff; }
-          .mcp-settings-modal { max-width: 600px; }
           @keyframes spin { to { transform: rotate(360deg); } }
           .view-toggle {
             display: flex;
@@ -768,27 +744,6 @@ export default function KanbanBoard() {
           .kanban-board::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); border-radius: 4px; }
           .kanban-board::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
         `}</style>
-
-        {/* MCP Settings Modal */}
-        {showMCPSettings && filterProject && (
-          <div className="modal-overlay" onClick={() => setShowMCPSettings(false)}>
-            <div className="modal-content mcp-settings-modal" onClick={e => e.stopPropagation()}>
-              <div className="modal-header">
-                <h3>Project MCP Servers</h3>
-                <button className="close-btn" onClick={() => setShowMCPSettings(false)}>×</button>
-              </div>
-              <ProjectMCPSettings
-                projectId={filterProject}
-                currentServers={projects.find(p => p.id === filterProject)?.mcp_servers || []}
-                onUpdate={(servers) => {
-                  setProjects(prev => prev.map(p => 
-                    p.id === filterProject ? { ...p, mcp_servers: servers } : p
-                  ));
-                }}
-              />
-            </div>
-          </div>
-        )}
       </main>
     </div>
   );

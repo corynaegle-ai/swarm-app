@@ -906,14 +906,19 @@ export default function Backlog() {
                 </div>
                 
                 <div className="chat-input-area">
-                  <input
-                    type="text"
+                  <textarea
                     className="chat-input"
                     placeholder="Type your message..."
                     value={chatInput}
                     onChange={e => setChatInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
                     disabled={chatLoading}
+                    rows={4}
                   />
                   <button 
                     className="send-btn"

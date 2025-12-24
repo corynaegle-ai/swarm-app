@@ -839,7 +839,14 @@ router.post('/:id/promote', requireAuth, async (req, res) => {
     
     // Create HITL session with backlog context
     const sessionId = uuidv4();
-    const initialState = skip_clarification ? 'ready_for_docs' : 'input';
+    // Check if refinement produced chat history
+    const hasRefinementHistory = item.chat_transcript && 
+      (Array.isArray(item.chat_transcript) ? item.chat_transcript.length > 0 : 
+       JSON.parse(item.chat_transcript || '[]').length > 0);
+    
+    // If has refinement history, start in clarifying state so Generate Spec is enabled
+    const initialState = skip_clarification ? 'ready_for_docs' : 
+                         hasRefinementHistory ? 'clarifying' : 'input';
     
     // Use enriched description if available, otherwise original
     const description = item.enriched_description || item.description || '';

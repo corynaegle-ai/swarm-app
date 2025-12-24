@@ -15,6 +15,7 @@ const { requireAuth } = require('../middleware/auth');
 const { broadcast } = require('../websocket');
 const { chat } = require('../services/claude-client');
 const { fetchContext } = require('../services/rag-client');
+const { gatherBacklogContext } = require('../services/context-gatherer');
 const RAG_BASE_URL = process.env.RAG_URL || 'http://localhost:8082';
 
 // ============================================================================
@@ -61,39 +62,94 @@ async function fetchBacklogRagContext(item, query) {
 /**
  * Generate initial clarifying message based on backlog item
  */
-function generateClarifyingPrompt(item, ragContext = '') {
+function generateClarifyingPrompt(item, context = {}, ragContext = '') {
   let systemPrompt = `You are a technical product clarifier helping refine a project idea.
 
-The user has submitted this idea to their backlog:
-Title: ${item.title}
-Description: ${item.description || 'No description provided'}`;
+## Project Overview
+**Title:** ${item.title}
+**Description:** ${item.description || 'No description provided'}
+`;
 
   if (item.repo_url) {
-    systemPrompt += `
-Repository: ${item.repo_url}`;
+    systemPrompt += `**Repository:** ${item.repo_url}\n`;
   }
 
+  // Add RAG context if available (backwards compatibility)
   if (ragContext) {
     systemPrompt += `
-
-The following code context from the repository may be relevant:
-
+## Repository Context (from codebase search)
 <repository_context>
 ${ragContext}
 </repository_context>
-
-Use this context to ask informed questions about the codebase.`;
+`;
   }
 
-  systemPrompt += `
+  // Add GitHub content from attachments
+  if (context.githubContent?.length > 0) {
+    systemPrompt += `\n## GitHub Context\n`;
+    for (const gh of context.githubContent) {
+      systemPrompt += `### ${gh.source} (${gh.type})\n${gh.content}\n\n`;
+    }
+  }
 
+  // Add document content
+  if (context.documentContent?.length > 0) {
+    systemPrompt += `\n## Attached Documents\n`;
+    for (const doc of context.documentContent) {
+      systemPrompt += `### ${doc.filename}\n${doc.content}\n\n`;
+    }
+  }
+
+  // Add image descriptions
+  if (context.imageDescriptions?.length > 0) {
+    systemPrompt += `\n## Attached Images\n`;
+    for (const img of context.imageDescriptions) {
+      systemPrompt += `### ${img.filename}\n${img.description}\n\n`;
+    }
+  }
+
+  // Add link references
+  if (context.links?.length > 0) {
+    systemPrompt += `\n## Referenced Links\n`;
+    for (const link of context.links) {
+      if (link.note) {
+        systemPrompt += `- ${link.name}: ${link.note}\n`;
+      } else {
+        systemPrompt += `- [${link.name}](${link.url})\n`;
+      }
+    }
+  }
+
+  // Note any context gathering errors
+  if (context.errors?.length > 0) {
+    systemPrompt += `\n## Notes\nSome attachments could not be processed: ${context.errors.map(e => e.attachment || 'unknown').join(', ')}\n`;
+  }
+
+  // Instructions for the agent
+  const hasRichContext = (context.githubContent?.length > 0) || 
+                         (context.documentContent?.length > 0) || 
+                         (context.imageDescriptions?.length > 0);
+
+  if (hasRichContext) {
+    systemPrompt += `
+## Your Task
+You have been provided with comprehensive context about this project idea including attached documents, images, and GitHub content. Your role is to:
+1. Start by briefly acknowledging the key context you've received (1-2 sentences)
+2. Ask TARGETED clarifying questions that build on what's already documented
+3. Avoid asking about information that's clearly provided in the context
+4. Focus on gaps, ambiguities, edge cases, and technical decisions not covered
+
+Start with a brief acknowledgment of the context, then ask your first focused clarifying question.`;
+  } else {
+    systemPrompt += `
+## Your Task
 Your goal is to ask 2-3 focused clarifying questions to better understand:
 1. The core problem being solved
 2. Key technical requirements or constraints  
 3. Success criteria
 
-Be conversational and helpful. Don't overwhelm with too many questions at once.
-When relevant, reference specific files or patterns from the repository context.`;
+Be conversational and helpful. Don't overwhelm with too many questions at once.`;
+  }
 
   return systemPrompt;
 }
@@ -428,7 +484,13 @@ router.post('/:id/start-chat', requireAuth, async (req, res) => {
       });
     }
     
-    // Fetch RAG context if repo_url is set
+    console.log(`[Backlog] Starting chat for item ${item.id}, gathering context...`);
+    
+    // Gather rich context from attachments (GitHub, docs, images)
+    const context = await gatherBacklogContext(item, req.user.tenant_id);
+    console.log(`[Backlog] Context gathered: ${context.githubContent?.length || 0} GitHub, ${context.documentContent?.length || 0} docs, ${context.imageDescriptions?.length || 0} images`);
+    
+    // Fetch RAG context if repo_url is set (backwards compatibility)
     let ragContext = '';
     if (item.repo_url) {
       const ragResult = await fetchBacklogRagContext(item, `Feature: ${item.title}. ${item.description || ''}`);
@@ -437,8 +499,10 @@ router.post('/:id/start-chat', requireAuth, async (req, res) => {
       }
     }
     
-    // Generate initial AI message with RAG context
-    const systemPrompt = generateClarifyingPrompt(item, ragContext);
+    // Generate system prompt with all context
+    const systemPrompt = generateClarifyingPrompt(item, context, ragContext);
+    
+    // Generate initial AI message
     const aiResult = await chat({ messages: [
       { role: 'user', content: 'Please start the clarification conversation.' }
     ], system: systemPrompt });
@@ -469,7 +533,14 @@ router.post('/:id/start-chat', requireAuth, async (req, res) => {
     res.json({
       success: true,
       item: updatedItem,
-      chat_history: [initialMessage]
+      chat_history: [initialMessage],
+      context_summary: {
+        github_sources: context.githubContent?.length || 0,
+        documents: context.documentContent?.length || 0,
+        images: context.imageDescriptions?.length || 0,
+        links: context.links?.length || 0,
+        errors: context.errors?.length || 0
+      }
     });
   } catch (err) {
     console.error('POST /api/backlog/:id/start-chat error:', err);

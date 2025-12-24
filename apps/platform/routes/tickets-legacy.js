@@ -21,19 +21,15 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// POST /claim - Agent claims a ticket
-// Supports ticket_filter: 'ready' (default, forge agents) or 'in_review' (sentinel agents)
 router.post('/claim', async (req, res) => {
   try {
     const { agent_id, vm_id, project_id, ticket_filter } = req.body || {};
     if (!agent_id) return res.status(400).json({ error: 'agent_id required' });
 
     // Determine which state to filter on
-    // - 'ready': forge agents claiming work (default)
-    // - 'in_review': sentinel agents claiming verification work
     const targetState = ticket_filter === 'in_review' ? 'in_review' : 'ready';
 
-    // Find claimable ticket with project info
+    // Find claimable ticket with project info INCLUDING mcp_servers
     let sql, params;
 
     if (project_id) {
@@ -42,7 +38,8 @@ router.post('/claim', async (req, res) => {
           t.*,
           p.repo_url as project_repo_url,
           p.type as project_type,
-          p.name as project_name
+          p.name as project_name,
+          p.mcp_servers as project_mcp_servers
         FROM tickets t
         LEFT JOIN projects p ON t.project_id = p.id
         WHERE t.state = $1 AND t.project_id = $2
@@ -56,7 +53,8 @@ router.post('/claim', async (req, res) => {
           t.*,
           p.repo_url as project_repo_url,
           p.type as project_type,
-          p.name as project_name
+          p.name as project_name,
+          p.mcp_servers as project_mcp_servers
         FROM tickets t
         LEFT JOIN projects p ON t.project_id = p.id
         WHERE t.state = $1
@@ -76,7 +74,7 @@ router.post('/claim', async (req, res) => {
     
     if (!ticket) return res.json({ ticket: null, message: 'No tickets available' });
 
-    // Log state transition: ready/in_review → assigned
+    // Log state transition
     console.log('[state transition] /claim:', {
       ticketId: ticket.id,
       fromState: ticket.state,
@@ -93,11 +91,23 @@ router.post('/claim', async (req, res) => {
       repo_url: ticket.project_repo_url,
       type: ticket.project_type
     };
+
+    // Get MCP servers - ticket overrides project defaults
+    const ticketMcpServers = ticket.mcp_servers || [];
+    const projectMcpServers = ticket.project_mcp_servers || [];
+    const effectiveMcpServers = ticketMcpServers.length > 0 ? ticketMcpServers : projectMcpServers;
+    
+    // Build projectSettings with model config and mcp_servers
+    const projectSettings = {
+      worker_model: 'claude-sonnet-4-20250514',
+      mcp_servers: projectMcpServers
+    };
     
     // Remove project fields from ticket object
     delete ticket.project_repo_url;
     delete ticket.project_type;
     delete ticket.project_name;
+    delete ticket.project_mcp_servers;
     
     // Claim the ticket - set to assigned state with lease
     const leaseMinutes = 30;
@@ -113,8 +123,15 @@ router.post('/claim', async (req, res) => {
     `, [agent_id, vm_id || null, ticket.id]);
     
     res.json({ 
-      ticket: { ...ticket, state: 'assigned', assignee_id: agent_id },
+      ticket: { 
+        ...ticket, 
+        state: 'assigned', 
+        assignee_id: agent_id,
+        mcp_servers: effectiveMcpServers,
+        user_id: ticket.tenant_id || 'default'
+      },
       project,
+      projectSettings,
       lease_minutes: leaseMinutes
     });
   } catch (err) {

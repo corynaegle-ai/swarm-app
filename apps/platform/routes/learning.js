@@ -10,7 +10,20 @@ const { RuleGenerator } = require('../lib/rule-generator.js');
 const { requireAuth } = require('../middleware/auth');
 const agentLearning = require('../lib/agent-learning.js');
 
-// All routes require authentication
+
+/**
+ * POST /api/learning/log - No auth (called by agents in VMs)
+ */
+router.post('/log', async (req, res) => {
+  try {
+    const result = await agentLearning.logExecution(req.body);
+    res.json({ success: true, executionId: result.executionId });
+  } catch (err) {
+    console.error('Learning log error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.use(requireAuth);
 
 /**
@@ -135,19 +148,5 @@ router.post('/rules/generate', (req, res) => {
   finally { detector.close(); generator.close(); }
 });
 
-
-/**
- * POST /api/learning/log
- * Log a completed agent execution
- */
-router.post('/log', async (req, res) => {
-  try {
-    const result = await agentLearning.logExecution(req.body);
-    res.json({ success: true, executionId: result.executionId });
-  } catch (err) {
-    console.error('Learning log error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
 
 module.exports = router;

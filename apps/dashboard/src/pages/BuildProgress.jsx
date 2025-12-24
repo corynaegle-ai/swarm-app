@@ -40,6 +40,11 @@ export default function BuildProgress() {
       try {
         const data = await getSession(sessionId);
         setSession(data.session);
+        // Load existing tickets from the database
+        if (data.tickets && data.tickets.length > 0) {
+          setTickets(data.tickets);
+          setLogs(prev => [...prev, `📂 Loaded ${data.tickets.length} existing tickets`]);
+        }
       } catch (err) {
         console.error(err);
       }

@@ -14,6 +14,8 @@ import {
   Brain,
   Wand2,
   Lightbulb,
+  BarChart3,
+  ExternalLink,
 } from 'lucide-react';
 
 export default function Sidebar() {
@@ -31,6 +33,10 @@ export default function Sidebar() {
     { to: '/backlog', icon: Lightbulb, label: 'Backlog' },
     { to: '/mcp-factory', icon: Wand2, label: 'MCP Factory' },
     { to: '/projects/new', icon: FolderPlus, label: 'New Project' },
+  ];
+
+  const toolsItems = [
+    { href: '/grafana', icon: BarChart3, label: 'Metrics', external: true },
   ];
 
   const adminItems = [
@@ -71,6 +77,23 @@ export default function Sidebar() {
               <item.icon size={18} />
               <span>{item.label}</span>
             </Link>
+          ))}
+        </div>
+
+        <div className="nav-section">
+          <div className="nav-section-label">Tools</div>
+          {toolsItems.map(item => (
+            <a 
+              key={item.href} 
+              href={item.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="nav-item"
+            >
+              <item.icon size={18} />
+              <span>{item.label}</span>
+              <ExternalLink size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+            </a>
           ))}
         </div>
         

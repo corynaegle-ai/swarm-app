@@ -354,6 +354,121 @@ export default function Backlog() {
     : items.filter(i => i.state === filter);
 
   // Render
+
+  // ============================================================================
+  // ATTACHMENT HANDLERS
+  // ============================================================================
+
+  // Fetch attachments when item selected
+  useEffect(() => {
+    if (selectedItem) {
+      fetchAttachments(selectedItem.id);
+    } else {
+      setAttachments([]);
+    }
+  }, [selectedItem?.id]);
+
+  const fetchAttachments = async (itemId) => {
+    try {
+      const res = await apiCall(`/api/backlog/${itemId}/attachments`);
+      if (res.ok) {
+        const data = await res.json();
+        setAttachments(data.attachments || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch attachments:', err);
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedItem) return;
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      setUploadProgress(10);
+      const token = localStorage.getItem('token');
+      const res = await fetch(`/api/backlog/${selectedItem.id}/attachments/file`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      
+      setUploadProgress(90);
+      
+      if (res.ok) {
+        const data = await res.json();
+        setAttachments(prev => [data.attachment, ...prev]);
+        toast.success('File uploaded');
+        setShowAttachmentModal(false);
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Upload failed');
+      }
+    } catch (err) {
+      toast.error('Upload failed');
+    } finally {
+      setUploadProgress(0);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleAddLink = async () => {
+    if (!linkUrl.trim() || !selectedItem) return;
+    
+    try {
+      const res = await apiCall(`/api/backlog/${selectedItem.id}/attachments/link`, {
+        method: 'POST',
+        body: JSON.stringify({ url: linkUrl, name: linkName })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setAttachments(prev => [data.attachment, ...prev]);
+        toast.success('Link added');
+        setLinkUrl('');
+        setLinkName('');
+        setShowAttachmentModal(false);
+      } else {
+        const err = await res.json();
+        toast.error(err.error || 'Failed to add link');
+      }
+    } catch (err) {
+      toast.error('Failed to add link');
+    }
+  };
+
+  const handleDeleteAttachment = async (attachmentId) => {
+    if (!selectedItem) return;
+    
+    try {
+      const res = await apiCall(
+        `/api/backlog/${selectedItem.id}/attachments/${attachmentId}`,
+        { method: 'DELETE' }
+      );
+      
+      if (res.ok) {
+        setAttachments(prev => prev.filter(a => a.id !== attachmentId));
+        toast.success('Attachment removed');
+      }
+    } catch (err) {
+      toast.error('Failed to remove attachment');
+    }
+  };
+
+  const getAttachmentIcon = (attachment) => {
+    switch (attachment.attachment_type) {
+      case 'git_link': return <GitBranch size={16} />;
+      case 'external_link': return <ExternalLink size={16} />;
+      case 'file':
+        if (attachment.mime_type?.startsWith('image/')) return <Image size={16} />;
+        return <FileText size={16} />;
+      default: return <Paperclip size={16} />;
+    }
+  };
+
   return (
     <div className="page-container">
       <Sidebar />

@@ -4,7 +4,7 @@
     "autoAllowBashIfSandboxed": true
   },
   "permissions": {
-    "defaultMode": "acceptEdits",
+    "defaultMode": "acceptAll",
     "allow": [
       "Read(./**)",
       "Write(./**)",

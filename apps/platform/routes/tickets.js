@@ -10,6 +10,7 @@ const { randomUUID } = require('crypto');
 const { requireAuth } = require('../middleware/auth');
 const { requireTenant } = require('../middleware/tenant');
 const { requirePermission } = require('../middleware/rbac');
+const { shouldRetryTicket } = require('../lib/agent-learning');
 
 const { broadcast } = require('../websocket');
 // =============================================================================
@@ -20,27 +21,28 @@ const { broadcast } = require('../websocket');
 router.get('/', requireAuth, requireTenant, requirePermission('view_projects'), async (req, res) => {
   try {
     const { state, project_id, limit = 100, offset = 0 } = req.query;
-    
+
     let sql = `
       SELECT t.* FROM tickets t
       JOIN projects p ON t.project_id = p.id
       WHERE p.tenant_id = $1
+      AND (t.retry_after IS NULL OR t.retry_after < CURRENT_TIMESTAMP)
     `;
     const params = [req.tenantId];
     let paramIdx = 2;
-    
-    if (state) { 
-      sql += ` AND t.state = $${paramIdx++}`; 
-      params.push(state); 
+
+    if (state) {
+      sql += ` AND t.state = $${paramIdx++}`;
+      params.push(state);
     }
-    if (project_id) { 
-      sql += ` AND t.project_id = $${paramIdx++}`; 
-      params.push(project_id); 
+    if (project_id) {
+      sql += ` AND t.project_id = $${paramIdx++}`;
+      params.push(project_id);
     }
-    
+
     sql += ` ORDER BY t.created_at DESC LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
     params.push(parseInt(limit), parseInt(offset));
-    
+
     const tickets = await queryAll(sql, params);
     res.json({ tickets, count: tickets.length });
   } catch (err) {
@@ -59,7 +61,7 @@ router.get('/stats', requireAuth, requireTenant, requirePermission('view_project
       WHERE p.tenant_id = $1
       GROUP BY t.state
     `, [req.tenantId]);
-    
+
     const total = stats.reduce((sum, s) => sum + s.count, 0);
     res.json({ total, byState: Object.fromEntries(stats.map(s => [s.state, s.count])) });
   } catch (err) {
@@ -128,12 +130,12 @@ router.post('/', requireAuth, requireTenant, requirePermission('manage_tickets')
     if (!title) return res.status(400).json({ error: 'Title required' });
 
     const id = randomUUID();
-    
+
     await execute(`
       INSERT INTO tickets (id, title, description, project_id, parent_id, state, created_at)
       VALUES ($1, $2, $3, $4, $5, 'draft', CURRENT_TIMESTAMP)
     `, [id, title, description, project_id, parent_id || null]);
-    
+
     res.status(201).json({ success: true, id });
   } catch (err) {
     console.error('POST /tickets error:', err);
@@ -150,17 +152,17 @@ router.get('/:id', requireAuth, requireTenant, requirePermission('view_projects'
   try {
     const { id } = req.params;
     const include = (req.query.include || '').split(',').filter(Boolean);
-    
+
     const ticket = await queryOne(`
       SELECT t.* FROM tickets t
       JOIN projects p ON t.project_id = p.id
       WHERE t.id = $1 AND p.tenant_id = $2
     `, [id, req.tenantId]);
-    
+
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    
+
     const response = { ...ticket };
-    
+
     // Include dependencies if requested
     if (include.includes('dependencies')) {
       response.blocked_by = await queryAll(`
@@ -169,7 +171,7 @@ router.get('/:id', requireAuth, requireTenant, requirePermission('view_projects'
         JOIN tickets t ON d.depends_on = t.id 
         WHERE d.ticket_id = $1
       `, [id]);
-      
+
       response.blocks = await queryAll(`
         SELECT t.id, t.title, t.state 
         FROM ticket_dependencies d 
@@ -177,7 +179,7 @@ router.get('/:id', requireAuth, requireTenant, requirePermission('view_projects'
         WHERE d.depends_on = $1
       `, [id]);
     }
-    
+
     // Include events if requested
     if (include.includes('events')) {
       response.events = await queryAll(`
@@ -187,7 +189,7 @@ router.get('/:id', requireAuth, requireTenant, requirePermission('view_projects'
         LIMIT 50
       `, [id]);
     }
-    
+
     res.json({ ticket: response });
   } catch (err) {
     console.error('GET /tickets/:id error:', err);
@@ -200,20 +202,20 @@ router.patch('/:id', requireAuth, requireTenant, requirePermission('manage_ticke
   try {
     const { id } = req.params;
     const allowedFields = ['title', 'description', 'acceptance_criteria', 'epic', 'estimated_scope', 'files_hint', 'priority', 'state'];
-    
+
     const currentTicket = await queryOne(`
       SELECT t.* FROM tickets t
       JOIN projects p ON t.project_id = p.id
       WHERE t.id = $1 AND p.tenant_id = $2
     `, [id, req.tenantId]);
-    
+
     if (!currentTicket) return res.status(404).json({ error: 'Ticket not found' });
-    
+
     const updates = [];
     const params = [];
     const changes = {};
     let paramIdx = 1;
-    
+
     for (const field of allowedFields) {
       if (req.body[field] !== undefined && req.body[field] !== currentTicket[field]) {
         updates.push(`${field} = $${paramIdx++}`);
@@ -221,16 +223,16 @@ router.patch('/:id', requireAuth, requireTenant, requirePermission('manage_ticke
         changes[field] = { from: currentTicket[field], to: req.body[field] };
       }
     }
-    
+
     if (updates.length === 0) {
       return res.json({ ticket: currentTicket, event_id: null, message: 'No changes' });
     }
-    
+
     updates.push('updated_at = CURRENT_TIMESTAMP');
     params.push(id);
-    
+
     await execute(`UPDATE tickets SET ${updates.join(', ')} WHERE id = $${paramIdx}`, params);
-    
+
     // Log event
     const eventResult = await queryOne(`
       INSERT INTO ticket_events (ticket_id, event_type, actor_id, actor_type, previous_value, new_value, metadata)
@@ -243,12 +245,12 @@ router.patch('/:id', requireAuth, requireTenant, requirePermission('manage_ticke
       JSON.stringify(Object.fromEntries(Object.entries(changes).map(([k, v]) => [k, v.to]))),
       JSON.stringify({ fields_changed: Object.keys(changes) })
     ]);
-    
+
     const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [id]);
-    
+
     // Broadcast to tenant
     broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'edited' });
-    
+
     res.json({ ticket: updatedTicket, event_id: eventResult?.id || null, changes: Object.keys(changes) });
   } catch (err) {
     console.error('PATCH /tickets/:id error:', err);
@@ -261,38 +263,38 @@ router.post('/:id/requeue', requireAuth, requireTenant, requirePermission('manag
   try {
     const { id } = req.params;
     const { reason } = req.body || {};
-    
+
     const ticket = await queryOne(`
       SELECT t.* FROM tickets t
       JOIN projects p ON t.project_id = p.id
       WHERE t.id = $1 AND p.tenant_id = $2
     `, [id, req.tenantId]);
-    
+
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    
+
     const requeueableStates = ['in_progress', 'assigned', 'in_review', 'changes_requested', 'done', 'failed', 'cancelled'];
     if (!requeueableStates.includes(ticket.state)) {
       return res.status(400).json({ error: `Cannot requeue from state '${ticket.state}'` });
     }
-    
+
     const previousState = ticket.state;
-    
+
     await execute(`
       UPDATE tickets 
       SET state = 'pending', assignee_id = NULL, assignee_type = NULL, 
           vm_id = NULL, error = NULL, updated_at = CURRENT_TIMESTAMP
       WHERE id = $1
     `, [id]);
-    
+
     await execute(`
       INSERT INTO ticket_events (ticket_id, event_type, actor_id, actor_type, previous_value, new_value, rationale)
       VALUES ($1, 'requeued', $2, 'human', $3, 'pending', $4)
     `, [id, req.user?.id || 'anonymous', previousState, reason || 'Manual requeue']);
-    
+
     const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [id]);
-    
+
     broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'requeued' });
-    
+
     res.json({ ticket: updatedTicket, previous_state: previousState });
   } catch (err) {
     console.error('POST /tickets/:id/requeue error:', err);
@@ -305,40 +307,40 @@ router.post('/:id/dependencies', requireAuth, requireTenant, requirePermission('
   try {
     const { id } = req.params;
     const { depends_on } = req.body || {};
-    
+
     if (!depends_on) return res.status(400).json({ error: 'depends_on required' });
-    
+
     // Verify both tickets belong to tenant
     const ticket = await queryOne(`
       SELECT t.id FROM tickets t JOIN projects p ON t.project_id = p.id
       WHERE t.id = $1 AND p.tenant_id = $2
     `, [id, req.tenantId]);
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    
+
     const depTicket = await queryOne(`
       SELECT t.id, t.state FROM tickets t JOIN projects p ON t.project_id = p.id
       WHERE t.id = $1 AND p.tenant_id = $2
     `, [depends_on, req.tenantId]);
     if (!depTicket) return res.status(404).json({ error: 'Dependency ticket not found' });
-    
+
     // Check circular dependency
     const wouldCycle = await queryOne(`
       SELECT 1 FROM ticket_dependencies WHERE ticket_id = $1 AND depends_on = $2
     `, [depends_on, id]);
     if (wouldCycle) return res.status(400).json({ error: 'Would create circular dependency' });
-    
+
     await execute(`
       INSERT INTO ticket_dependencies (ticket_id, depends_on) VALUES ($1, $2)
       ON CONFLICT DO NOTHING
     `, [id, depends_on]);
-    
+
     await execute(`
       INSERT INTO ticket_events (ticket_id, event_type, actor_id, actor_type, new_value)
       VALUES ($1, 'dependency_added', $2, 'human', $3)
     `, [id, req.user?.id || 'anonymous', depends_on]);
-    
+
     broadcast.toTenant(req.tenantId, 'ticket:update', { ticketId: id, action: 'dependency_added' });
-    
+
     res.json({ success: true, ticket_id: id, depends_on });
   } catch (err) {
     console.error('POST /tickets/:id/dependencies error:', err);
@@ -350,22 +352,22 @@ router.post('/:id/dependencies', requireAuth, requireTenant, requirePermission('
 router.delete('/:id/dependencies/:depends_on', requireAuth, requireTenant, requirePermission('manage_tickets'), async (req, res) => {
   try {
     const { id, depends_on } = req.params;
-    
+
     const ticket = await queryOne(`
       SELECT t.id FROM tickets t JOIN projects p ON t.project_id = p.id
       WHERE t.id = $1 AND p.tenant_id = $2
     `, [id, req.tenantId]);
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    
+
     await execute(`DELETE FROM ticket_dependencies WHERE ticket_id = $1 AND depends_on = $2`, [id, depends_on]);
-    
+
     await execute(`
       INSERT INTO ticket_events (ticket_id, event_type, actor_id, actor_type, previous_value)
       VALUES ($1, 'dependency_removed', $2, 'human', $3)
     `, [id, req.user?.id || 'anonymous', depends_on]);
-    
+
     broadcast.toTenant(req.tenantId, 'ticket:update', { ticketId: id, action: 'dependency_removed' });
-    
+
     res.json({ success: true, ticket_id: id, removed: depends_on });
   } catch (err) {
     console.error('DELETE /tickets/:id/dependencies error:', err);
@@ -388,29 +390,90 @@ router.put('/:id', requireAuth, requireTenant, requirePermission('manage_tickets
     const updates = [];
     const params = [];
     let paramIdx = 1;
-    
+
     if (title) { updates.push(`title = $${paramIdx++}`); params.push(title); }
     if (description) { updates.push(`description = $${paramIdx++}`); params.push(description); }
-    if (state) { updates.push(`state = $${paramIdx++}`); params.push(state); }
+    if (state) {
+      // SENTINEL FEEDBACK LOOP IMPL
+      // If setting to 'failed' or 'cancelled', check if we should retry
+      if ((state === 'failed' || state === 'cancelled') && !req.body.force_fail) {
+        const currentTicket = await queryOne('SELECT retry_count, state FROM tickets WHERE id = $1', [req.params.id]);
+        const currentRetryCount = currentTicket?.retry_count || 0;
+
+        // Only retry if not already cancelled/failed (unless moving from one failure state to another)
+        const errorMsg = req.body.hold_reason || req.body.error || 'Unknown error';
+        const retryDecision = shouldRetryTicket(errorMsg, currentRetryCount);
+
+        if (retryDecision.shouldRetry) {
+          console.log(`[Sentinel] Retrying ticket ${req.params.id} (Attempt ${currentRetryCount + 1}). Reason: ${errorMsg}`);
+
+          // Override the status change to 'pending'
+          // We don't push 'state' update immediately, we handle it here
+
+          // Calculate retry time
+          const retryAfter = new Date(Date.now() + retryDecision.nextDelay).toISOString();
+
+          await execute(`
+            UPDATE tickets 
+            SET state = 'pending',
+                retry_count = $1,
+                retry_after = $2,
+                hold_reason = $3,
+                sentinel_feedback = $4,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = $5
+          `, [
+            currentRetryCount + 1,
+            retryAfter,
+            `Retry #${currentRetryCount + 1}: ${errorMsg}`,
+            { message: req.body.sentinel_feedback || errorMsg, error: errorMsg }, // Store as JSON object
+            req.params.id
+          ]);
+
+          const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [req.params.id]);
+          broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'retried' });
+
+          return res.json({
+            success: true,
+            retried: true,
+            message: `Ticket requeued for retry in ${retryDecision.nextDelay}ms`
+          });
+        }
+      }
+
+      updates.push(`state = $${paramIdx++}`);
+      params.push(state);
+    }
     if (priority) { updates.push(`priority = $${paramIdx++}`); params.push(priority); }
     if (assignee_id !== undefined) { updates.push(`assignee_id = $${paramIdx++}`); params.push(assignee_id); }
     if (parent_id !== undefined) { updates.push(`parent_id = $${paramIdx++}`); params.push(parent_id); }
-    
+
+    // Add these fields to allow saving feedback even if not retrying
+    if (req.body.sentinel_feedback) {
+      updates.push(`sentinel_feedback = $${paramIdx++}`);
+      // Ensure it is an object
+      const feedback = typeof req.body.sentinel_feedback === 'string'
+        ? { message: req.body.sentinel_feedback }
+        : req.body.sentinel_feedback;
+      params.push(feedback);
+    }
+    if (req.body.hold_reason) { updates.push(`hold_reason = $${paramIdx++}`); params.push(req.body.hold_reason); }
+
     if (updates.length === 0) return res.json({ success: true, message: 'No changes' });
-    
+
     updates.push('updated_at = CURRENT_TIMESTAMP');
     params.push(req.params.id);
     await execute(`UPDATE tickets SET ${updates.join(', ')} WHERE id = $${paramIdx}`, params);
-    
+
     // Notify deploy agent if ticket was marked done
     if (state === 'done') {
       notifyDeployAgent(req.params.id, state);
       await checkSessionCompletion(req.params.id);
     }
-    
+
     const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [req.params.id]);
     broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'updated' });
-    
+
     res.json({ success: true });
   } catch (err) {
     console.error('PUT /tickets/:id error:', err);
@@ -428,11 +491,11 @@ router.delete('/:id', requireAuth, requireTenant, requirePermission('manage_tick
       WHERE t.id = $1 AND p.tenant_id = $2
     `, [req.params.id, req.tenantId]);
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
-    
+
     await execute('DELETE FROM tickets WHERE id = $1', [req.params.id]);
     const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [req.params.id]);
     broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'updated' });
-    
+
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /tickets/:id error:', err);
@@ -449,7 +512,7 @@ router.post('/:id/verify', requireAuth, requireTenant, requirePermission('manage
   try {
     const { id } = req.params;
     const { action, evidence, reason } = req.body;
-    
+
     // Verify ticket belongs to tenant
     const ticket = await queryOne(`
       SELECT t.* FROM tickets t
@@ -459,12 +522,12 @@ router.post('/:id/verify', requireAuth, requireTenant, requirePermission('manage
     if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
     const now = new Date().toISOString();
-    
+
     switch (action) {
       case 'start':
         if (ticket.state !== 'in_progress') {
-          return res.status(400).json({ 
-            error: `Cannot start verification from state '${ticket.state}'. Must be 'in_progress'.` 
+          return res.status(400).json({
+            error: `Cannot start verification from state '${ticket.state}'. Must be 'in_progress'.`
           });
         }
         await execute(`
@@ -472,15 +535,15 @@ router.post('/:id/verify', requireAuth, requireTenant, requirePermission('manage
           SET state = 'verifying', verification_status = 'partial', updated_at = $1
           WHERE id = $2
         `, [now, id]);
-        
+
         await logProgress(id, 'verification_started', 'Verification process initiated');
         res.json({ success: true, state: 'verifying' });
         break;
 
       case 'pass':
         if (ticket.state !== 'verifying') {
-          return res.status(400).json({ 
-            error: `Cannot pass verification from state '${ticket.state}'. Must be 'verifying'.` 
+          return res.status(400).json({
+            error: `Cannot pass verification from state '${ticket.state}'. Must be 'verifying'.`
           });
         }
         const passEvidence = evidence ? JSON.stringify(evidence) : ticket.verification_evidence;
@@ -490,27 +553,65 @@ router.post('/:id/verify', requireAuth, requireTenant, requirePermission('manage
               verification_evidence = $1, updated_at = $2
           WHERE id = $3
         `, [passEvidence, now, id]);
-        
+
         await logProgress(id, 'verification_passed', 'All acceptance criteria verified');
         res.json({ success: true, state: 'done', verification_status: 'verified' });
         break;
 
       case 'fail':
         if (ticket.state !== 'verifying') {
-          return res.status(400).json({ 
-            error: `Cannot fail verification from state '${ticket.state}'. Must be 'verifying'.` 
+          return res.status(400).json({
+            error: `Cannot fail verification from state '${ticket.state}'. Must be 'verifying'.`
           });
         }
         const failEvidence = evidence ? JSON.stringify(evidence) : ticket.verification_evidence;
-        await execute(`
-          UPDATE tickets 
-          SET state = 'in_progress', verification_status = 'failed',
-              verification_evidence = $1, rejection_count = COALESCE(rejection_count, 0) + 1, updated_at = $2
-          WHERE id = $3
-        `, [failEvidence, now, id]);
-        
-        await logProgress(id, 'verification_failed', reason || 'Verification failed, returning to in_progress');
-        res.json({ success: true, state: 'in_progress', verification_status: 'failed' });
+
+        // SENTINEL FEEDBACK LOOP IMPL
+        const currentRetryCount = ticket.retry_count || 0;
+        const retryDecision = shouldRetryTicket(reason || 'Verification failed', currentRetryCount);
+
+        if (retryDecision.shouldRetry) {
+          console.log(`[Sentinel] Retrying ticket ${id} after verification failure (Attempt ${currentRetryCount + 1})`);
+          const retryAfter = new Date(Date.now() + retryDecision.nextDelay).toISOString();
+
+          await execute(`
+            UPDATE tickets 
+            SET state = 'pending', 
+                verification_status = 'failed',
+                verification_evidence = $1, 
+                retry_count = $2,
+                retry_after = $3,
+                hold_reason = $4,
+                sentinel_feedback = $5,
+                updated_at = $6
+            WHERE id = $7
+          `, [
+            failEvidence,
+            currentRetryCount + 1,
+            retryAfter,
+            `Verification Retry #${currentRetryCount + 1}: ${reason}`,
+            { message: reason, context: 'verification_failure' }, // Use reason as sentinel_feedback (JSON)
+            now,
+            id
+          ]);
+
+          await logProgress(id, 'verification_failed_retry', `Verification failed, auto-retrying in ${retryDecision.nextDelay}ms. Reason: ${reason}`);
+          const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [id]);
+          broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'retried' });
+
+          res.json({ success: true, state: 'pending', verification_status: 'failed', retried: true });
+        } else {
+          // No more retries - standard fail behavior
+          await execute(`
+            UPDATE tickets 
+            SET state = 'in_progress', verification_status = 'failed',
+                verification_evidence = $1, rejection_count = COALESCE(rejection_count, 0) + 1, updated_at = $2
+            WHERE id = $3
+          `, [failEvidence, now, id]);
+
+          await logProgress(id, 'verification_failed', reason || 'Verification failed, returning to in_progress');
+          res.json({ success: true, state: 'in_progress', verification_status: 'failed' });
+        }
         break;
 
       default:
@@ -527,7 +628,7 @@ router.put('/:id/files', requireAuth, requireTenant, requirePermission('manage_t
   try {
     const { id } = req.params;
     const { files } = req.body;
-    
+
     if (!Array.isArray(files)) {
       return res.status(400).json({ error: 'files must be an array of file paths' });
     }
@@ -546,7 +647,7 @@ router.put('/:id/files', requireAuth, requireTenant, requirePermission('manage_t
       SET files_involved = $1, updated_at = $2
       WHERE id = $3
     `, [JSON.stringify(files), now, id]);
-    
+
     await logProgress(id, 'files_updated', `Updated files_involved: ${files.length} files`);
     res.json({ success: true, files_involved: files });
   } catch (err) {
@@ -559,7 +660,7 @@ router.put('/:id/files', requireAuth, requireTenant, requirePermission('manage_t
 router.get('/:id/impact', requireAuth, requireTenant, requirePermission('view_projects'), async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Verify ticket belongs to tenant
     const ticket = await queryOne(`
       SELECT t.* FROM tickets t
@@ -576,7 +677,7 @@ router.get('/:id/impact', requireAuth, requireTenant, requirePermission('view_pr
     }
 
     if (filesInvolved.length === 0) {
-      return res.json({ 
+      return res.json({
         ticket_id: id,
         files_involved: [],
         impacted_tickets: [],
@@ -633,7 +734,7 @@ router.post('/:id/needs-review', requireAuth, requireTenant, requirePermission('
   try {
     const { id } = req.params;
     const { reason } = req.body;
-    
+
     // Verify ticket belongs to tenant
     const ticket = await queryOne(`
       SELECT t.* FROM tickets t
@@ -648,7 +749,7 @@ router.post('/:id/needs-review', requireAuth, requireTenant, requirePermission('
       SET state = 'needs_review', hold_reason = $1, updated_at = $2
       WHERE id = $3
     `, [reason || 'Marked for review', now, id]);
-    
+
     await logProgress(id, 'marked_needs_review', reason || 'Ticket marked as needing review');
     res.json({ success: true, state: 'needs_review' });
   } catch (err) {
@@ -680,7 +781,7 @@ router.get('/:id/children', requireAuth, requireTenant, requirePermission('view_
 // Internal: Notify deploy-agent when ticket completes
 async function notifyDeployAgent(ticketId, status) {
   if (status !== 'done' && status !== 'completed') return;
-  
+
   try {
     const response = await fetch('http://localhost:3457/api/callbacks/ticket-complete', {
       method: 'POST',
@@ -700,12 +801,12 @@ async function notifyDeployAgent(ticketId, status) {
 async function checkSessionCompletion(ticketId) {
   const ticket = await queryOne('SELECT design_session FROM tickets WHERE id = $1', [ticketId]);
   if (!ticket?.design_session) return;
-  
+
   const incomplete = await queryOne(`
     SELECT COUNT(*)::int as count FROM tickets 
     WHERE design_session = $1 AND state NOT IN ('done', 'cancelled')
   `, [ticket.design_session]);
-  
+
   if (incomplete.count === 0) {
     await execute(`
       UPDATE hitl_sessions SET state = 'completed', updated_at = CURRENT_TIMESTAMP
@@ -834,20 +935,20 @@ router.get('/:id/activity', requireAuth, requireTenant, requirePermission('view_
 // Log progress entry to ticket's progress_log JSON
 async function logProgress(ticketId, event, message) {
   const ticket = await queryOne('SELECT progress_log FROM tickets WHERE id = $1', [ticketId]);
-  
+
   let log = { entries: [] };
   try {
     log = ticket?.progress_log ? JSON.parse(ticket.progress_log) : { entries: [] };
   } catch (e) {
     log = { entries: [] };
   }
-  
+
   log.entries.push({
     timestamp: new Date().toISOString(),
     event,
     message
   });
-  
+
   await execute('UPDATE tickets SET progress_log = $1 WHERE id = $2', [JSON.stringify(log), ticketId]);
 }
 

@@ -51,33 +51,33 @@ const log = {
 async function fetchRagContext(ticket) {
   // If ticket already has RAG context, use it
   if (ticket.rag_context) {
-    const ctx = typeof ticket.rag_context === 'string' 
-      ? JSON.parse(ticket.rag_context) 
+    const ctx = typeof ticket.rag_context === 'string'
+      ? JSON.parse(ticket.rag_context)
       : ticket.rag_context;
-    log.info('Using stored RAG context', { 
+    log.info('Using stored RAG context', {
       files_to_modify: ctx.files_to_modify?.length || 0,
       files_to_create: ctx.files_to_create?.length || 0
     });
     return ctx;
   }
-  
+
   // Otherwise, query RAG service
   if (!ticket.repo_url) {
     log.info('No repo_url - skipping RAG fetch');
     return null;
   }
-  
+
   try {
     const query = `${ticket.title}: ${ticket.description}`;
     log.info('Fetching fresh RAG context', { query: query.slice(0, 100) });
-    
+
     const response = await httpPost(`${CONFIG.ragUrl}/api/rag/search`, {
       query,
       repoUrls: [ticket.repo_url],
       limit: 10,
       maxTokens: 4000
     });
-    
+
     if (response.results && response.results.length > 0) {
       return {
         files_found: response.results.map(r => r.filepath),
@@ -91,7 +91,7 @@ async function fetchRagContext(ticket) {
   } catch (e) {
     log.error('RAG fetch failed', { error: e.message });
   }
-  
+
   return null;
 }
 
@@ -112,38 +112,39 @@ ${formatAcceptanceCriteria(ticket.acceptance_criteria)}
 **Scope:** ${ticket.estimated_scope || 'medium'}
 `;
 
+
+
   // Add files hint
   if (ticket.files_hint) {
     prompt += `\n**Files Hint:** ${ticket.files_hint}\n`;
   }
-  
+
   // Inject sentinel feedback if this is a retry attempt
   const sentinelFeedbackSection = formatSentinelFeedback(ticket);
   if (sentinelFeedbackSection) {
     prompt += sentinelFeedbackSection;
-    log.info('Injected sentinel feedback into prompt', { 
-        ticketId: ticket.id, 
-        retryCount: ticket.retry_count,
-        promptLength: prompt.length 
+    log.info('Injected sentinel feedback into prompt', {
+      ticketId: ticket.id,
+      retryCount: ticket.retry_count,
+      promptLength: prompt.length
     });
   }
-  
   // Add RAG context if available
   if (ragContext) {
     prompt += `\n## Existing Codebase Context\n`;
-    
+
     if (ragContext.files_to_modify?.length > 0) {
       prompt += `\n**Files to Modify:** ${ragContext.files_to_modify.join(', ')}\n`;
     }
-    
+
     if (ragContext.files_to_create?.length > 0) {
       prompt += `\n**Files to Create:** ${ragContext.files_to_create.join(', ')}\n`;
     }
-    
+
     if (ragContext.implementation_notes) {
       prompt += `\n**Implementation Notes:** ${ragContext.implementation_notes}\n`;
     }
-    
+
     if (ragContext.snippets?.length > 0) {
       prompt += `\n### Relevant Code Snippets\n\nThese snippets show existing patterns in the codebase. Follow these conventions:\n\n`;
       for (const snippet of ragContext.snippets.slice(0, 5)) {
@@ -151,7 +152,7 @@ ${formatAcceptanceCriteria(ticket.acceptance_criteria)}
       }
     }
   }
-  
+
   // Add existing file structure if we fetched it
   if (existingFiles.length > 0) {
     prompt += `\n### Current Repository Structure\n\`\`\`\n${existingFiles.slice(0, 50).join('\n')}\n\`\`\`\n`;
@@ -198,7 +199,7 @@ Return a JSON object:
  */
 function formatAcceptanceCriteria(criteria) {
   if (!criteria) return '- None specified';
-  
+
   try {
     const parsed = typeof criteria === 'string' ? JSON.parse(criteria) : criteria;
     if (Array.isArray(parsed)) {
@@ -216,25 +217,25 @@ function formatAcceptanceCriteria(criteria) {
  * @returns {string} Formatted feedback section or empty string
  */
 function formatSentinelFeedback(ticket) {
-    if (!ticket.sentinel_feedback) return '';
-    
-    const feedback = typeof ticket.sentinel_feedback === 'string' 
-        ? JSON.parse(ticket.sentinel_feedback) 
-        : ticket.sentinel_feedback;
-    
-    const feedbackItems = feedback.feedback_for_agent || [];
-    if (feedbackItems.length === 0) return '';
-    
-    const attempt = (ticket.retry_count || 0) + 1;
-    const maxAttempts = 3;
-    
-    log.info('Formatting sentinel feedback for prompt injection', { 
-        ticketId: ticket.id, 
-        attempt, 
-        issueCount: feedbackItems.length 
-    });
-    
-    return `
+  if (!ticket.sentinel_feedback) return '';
+
+  const feedback = typeof ticket.sentinel_feedback === 'string'
+    ? JSON.parse(ticket.sentinel_feedback)
+    : ticket.sentinel_feedback;
+
+  const feedbackItems = feedback.feedback_for_agent || [];
+  if (feedbackItems.length === 0) return '';
+
+  const attempt = (ticket.retry_count || 0) + 1;
+  const maxAttempts = 3;
+
+  log.info('Formatting sentinel feedback for prompt injection', {
+    ticketId: ticket.id,
+    attempt,
+    issueCount: feedbackItems.length
+  });
+
+  return `
 
 ## ⚠️ PREVIOUS ATTEMPT REJECTED - MUST FIX THESE ISSUES
 
@@ -363,7 +364,7 @@ async function processTicket(ticket, projectSettings = {}) {
     };
   } finally {
     if (repoDir && fs.existsSync(repoDir)) {
-      try { fs.rmSync(repoDir, { recursive: true, force: true }); } catch {}
+      try { fs.rmSync(repoDir, { recursive: true, force: true }); } catch { }
     }
   }
 }
@@ -373,7 +374,7 @@ async function processTicket(ticket, projectSettings = {}) {
  */
 async function enrichWithFileContents(ragContext, repoDir) {
   const enriched = { ...ragContext, snippets: ragContext.snippets || [] };
-  
+
   for (const filePath of ragContext.files_to_modify || []) {
     const fullPath = path.join(repoDir, filePath);
     if (fs.existsSync(fullPath)) {
@@ -390,7 +391,7 @@ async function enrichWithFileContents(ragContext, repoDir) {
       }
     }
   }
-  
+
   return enriched;
 }
 
@@ -417,14 +418,14 @@ function getRepoFileList(repoDir) {
 
 function cloneRepo(repoUrl, targetDir) {
   fs.mkdirSync(targetDir, { recursive: true });
-  
+
   // Convert HTTPS URL with PAT if available
   let cloneUrl = repoUrl;
   if (CONFIG.githubPat && repoUrl.includes('github.com')) {
     cloneUrl = repoUrl.replace('https://', `https://${CONFIG.githubPat}@`);
   }
-  
-  execSync(`git clone --depth 1 ${cloneUrl} ${targetDir}`, { 
+
+  execSync(`git clone --depth 1 ${cloneUrl} ${targetDir}`, {
     stdio: 'pipe',
     timeout: 60000
   });
@@ -436,24 +437,24 @@ function createBranch(repoDir, branchName) {
 
 function writeFiles(repoDir, files) {
   const written = [];
-  
+
   for (const file of files) {
     const fullPath = path.join(repoDir, file.path);
     const dir = path.dirname(fullPath);
-    
+
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(fullPath, file.content);
     written.push(file.path);
-    
+
     log.debug('Wrote file', { path: file.path, action: file.action || 'create' });
   }
-  
+
   return written;
 }
 
 function commitAndPush(repoDir, ticket, branchName, message) {
   const commitMsg = `[${ticket.id}] ${message}`;
-  
+
   execSync('git add -A', { cwd: repoDir, stdio: 'pipe' });
   execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: repoDir, stdio: 'pipe' });
   execSync(`git push -u origin ${branchName}`, { cwd: repoDir, stdio: 'pipe' });
@@ -463,20 +464,20 @@ async function createPullRequest(ticket, branchName, summary) {
   // Extract owner/repo from URL
   const repoPath = ticket.repo_url.replace(/.*github\.com[:/]/, '').replace(/\.git$/, '');
   const [owner, repo] = repoPath.split('/');
-  
+
   const prBody = {
     title: `[${ticket.id}] ${ticket.title}`,
     body: `## Summary\n${summary}\n\n## Ticket\n${ticket.description}\n\n---\n*Generated by FORGE Agent*`,
     head: branchName,
     base: 'main'
   };
-  
+
   try {
     const response = await httpPost(`https://api.github.com/repos/${owner}/${repo}/pulls`, prBody, {
       'Authorization': `token ${CONFIG.githubPat}`,
       'Accept': 'application/vnd.github.v3+json'
     });
-    
+
     return response.html_url;
   } catch (e) {
     log.error('PR creation failed', { error: e.message });
@@ -494,28 +495,27 @@ async function callClaude(messages, model = CONFIG.claudeModel, ticketId = null)
     max_tokens: 4096,
     messages
   };
-  
+
   // Extract prompt preview for logging
   const promptPreview = messages.map(m => m.content?.substring?.(0, 200) || '').join(' | ');
-  
+
   // Log AI request with prompt
   if (ticketId) {
     await activity.logAiRequest(ticketId, model, promptPreview);
   }
-  
   const response = await httpPost('https://api.anthropic.com/v1/messages', requestBody, {
     'x-api-key': CONFIG.claudeApiKey,
     'anthropic-version': '2023-06-01'
   });
-  
+
   const responseText = response.content?.[0]?.text || '';
   const usage = response.usage || {};
-  
+
   // Log AI response with usage stats
   if (ticketId) {
     await activity.logAiResponse(ticketId, model, responseText.substring(0, 500), usage);
   }
-  
+
   return responseText;
 }
 
@@ -529,7 +529,7 @@ function parseCodeResponse(response) {
       log.error('Failed to parse JSON response', { error: e.message });
     }
   }
-  
+
   // Try parsing entire response as JSON
   try {
     return JSON.parse(response);
@@ -555,7 +555,7 @@ function httpPost(url, body, extraHeaders = {}) {
         ...extraHeaders
       }
     };
-    
+
     const client = urlObj.protocol === 'https:' ? https : http;
     const req = client.request(options, (res) => {
       let data = '';
@@ -568,7 +568,7 @@ function httpPost(url, body, extraHeaders = {}) {
         }
       });
     });
-    
+
     req.on('error', reject);
     req.write(JSON.stringify(body));
     req.end();

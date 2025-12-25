@@ -22,7 +22,7 @@ async function getExecutionStats(startDate, endDate, tenantId = null) {
     tenantFilter = 'AND tenant_id = $3';
     params.push(tenantId);
   }
-  
+
   const result = await db.get(`
     SELECT 
       COUNT(*)::int as total_executions,
@@ -39,7 +39,7 @@ async function getExecutionStats(startDate, endDate, tenantId = null) {
     WHERE created_at >= $1 AND created_at <= $2
     ${tenantFilter}
   `, params);
-  
+
   return result || {
     total_executions: 0, successes: 0, failures: 0, timeouts: 0, blocked: 0,
     avg_duration_ms: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0, success_rate: 0
@@ -53,7 +53,7 @@ async function getCommonErrors(limit = 10, category = null, tenantId = null) {
   // Since execution_errors table may not exist in PG, query from agent_executions directly
   const params = [limit];
   let filters = ["error_message IS NOT NULL"];
-  
+
   if (category) {
     params.push(category);
     filters.push(`error_category = $${params.length}`);
@@ -62,9 +62,12 @@ async function getCommonErrors(limit = 10, category = null, tenantId = null) {
     params.push(tenantId);
     filters.push(`tenant_id = $${params.length}`);
   }
-  
+
+  // Filter out manual_review category as it's not a true system error
+  filters.push("error_category != 'manual_review'");
+
   const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
-  
+
   return db.all(`
     SELECT 
       error_category as category,
@@ -89,7 +92,7 @@ async function getSuccessPatterns(minSuccessRate = 80, tenantId = null) {
     params.push(tenantId);
     tenantFilter = `AND tenant_id = $${params.length}`;
   }
-  
+
   return db.all(`
     SELECT 
       model,
@@ -118,7 +121,7 @@ async function getTokenUsageTrend(days = 7, tenantId = null) {
     params.push(tenantId);
     tenantFilter = `AND tenant_id = $${params.length}`;
   }
-  
+
   return db.all(`
     SELECT 
       DATE(created_at) as date,
@@ -145,14 +148,14 @@ async function getErrorDistribution(tenantId = null) {
     params.push(tenantId);
     tenantFilter = `AND tenant_id = $${params.length}`;
   }
-  
+
   return db.all(`
     SELECT 
       COALESCE(error_category, 'unknown') as category,
       COUNT(*)::int as count,
       ROUND(100.0 * COUNT(*) / NULLIF((SELECT COUNT(*) FROM agent_executions WHERE error_message IS NOT NULL), 0), 1) as percentage
     FROM agent_executions
-    WHERE error_message IS NOT NULL ${tenantFilter}
+    WHERE error_message IS NOT NULL AND error_category != 'manual_review' ${tenantFilter}
     GROUP BY error_category
     ORDER BY count DESC
   `, params);
@@ -168,7 +171,7 @@ async function getRecentExecutions(limit = 20, tenantId = null) {
     params.push(tenantId);
     tenantFilter = `AND tenant_id = $${params.length}`;
   }
-  
+
   return db.all(`
     SELECT 
       id, task_id, agent_id, model,

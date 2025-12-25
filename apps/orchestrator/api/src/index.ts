@@ -11,6 +11,11 @@ import './steps/triggers/manual.js';
 import './steps/triggers/webhook.js';
 import './steps/integrations/http-request.js';
 import './steps/logic/delay.js';
+// Swarm integration steps
+import './steps/swarm/create-ticket.js';
+import './steps/swarm/wait-for-agent.js';
+// Human-in-the-loop steps
+import './steps/human/approval-gate.js';
 
 const app = express();
 const PORT = process.env.PORT || 3501;
@@ -24,7 +29,13 @@ app.use((req, res, next) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'swarm-orchestrator-api', db: 'postgresql', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    service: 'swarm-orchestrator-api', 
+    db: 'postgresql',
+    integrations: ['swarmdb'],
+    timestamp: new Date().toISOString() 
+  });
 });
 
 app.use('/api/flows', flowsRouter);

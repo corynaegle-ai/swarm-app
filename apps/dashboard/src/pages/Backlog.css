@@ -555,7 +555,7 @@
 /* Chat Modal */
 .chat-modal {
   width: 100%;
-  max-width: 700px;
+  max-width: 1050px;
   height: 80vh;
   display: flex;
   flex-direction: column;

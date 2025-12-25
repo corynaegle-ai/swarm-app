@@ -124,7 +124,9 @@ router.get('/detect', async (req, res) => {
     res.json({
       summary: {
         total_executions: stats?.total_executions || 0,
-        success_rate: stats?.success_rate || 0,
+        success_rate_pct: stats?.success_rate || 0,
+        total_input_tokens: stats?.total_input_tokens || 0,
+        total_output_tokens: stats?.total_output_tokens || 0,
         total_tokens: stats?.total_tokens || 0,
         avg_duration_ms: stats?.avg_duration_ms || 0
       },

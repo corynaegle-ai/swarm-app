@@ -66,10 +66,12 @@ curl localhost:8080/api/hitl/6812bebd-3d71-4a1a-9c1a-34cb4c27c8af | jq .session.
 - `apps/platform/code/forge-agent-v4.js`: Injected `sentinel_feedback` into agent prompt.
 - `apps/platform/lib/learning-queries.js`: Migrated to PostgreSQL and filtered `manual_review` errors from analytics.
 
-### 2. Backlog Refinement Fix
+### 2. Backlog Refinement Fixes
 **Bug**: Refinement session (`chatting` state) not reloading history on page refresh.
-**Root Cause**: Frontend expected `chat_history` but list API returns `chat_transcript`.
 **Fix**: Updated `Backlog.jsx` to fallback to `chat_transcript` and parse JSON.
+
+**Feature**: Show original user input in chat.
+**Change**: Updated `backlog.js` to insert the initial idea as the first user message in the transcript.
 
 ### 3. Verification
 - **Sentinel**: Verified via end-to-end script `test-sentinel-retry.js`. Ticket transitions: `failed` -> `pending` (Retry Count: 1).

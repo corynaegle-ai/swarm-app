@@ -49,7 +49,7 @@ async function fetchBacklogRagContext(item, query) {
   if (!item.repo_url) {
     return { context: '', files: [], success: false, reason: 'no_repo_url' };
   }
-  
+
   try {
     const result = await fetchContext(query, [item.repo_url], { maxTokens: 4000 });
     console.log(`[RAG] Backlog context: ${result.success ? result.tokenCount + ' tokens' : result.reason}`);
@@ -127,9 +127,9 @@ ${ragContext}
   }
 
   // Instructions for the agent
-  const hasRichContext = (context.githubContent?.length > 0) || 
-                         (context.documentContent?.length > 0) || 
-                         (context.imageDescriptions?.length > 0);
+  const hasRichContext = (context.githubContent?.length > 0) ||
+    (context.documentContent?.length > 0) ||
+    (context.imageDescriptions?.length > 0);
 
   if (hasRichContext) {
     systemPrompt += `
@@ -169,9 +169,9 @@ router.get('/repos', requireAuth, async (req, res) => {
     if (!response.ok) {
       return res.status(502).json({ error: 'Failed to fetch repositories from RAG service' });
     }
-    
+
     const data = await response.json();
-    
+
     // Return only essential fields for the dropdown - filter to ready repos only
     const repos = (data.repositories || [])
       .filter(r => r.index_status === 'ready')
@@ -181,7 +181,7 @@ router.get('/repos', requireAuth, async (req, res) => {
         name: r.name,
         chunk_count: r.chunk_count
       }));
-    
+
     res.json({ repos });
   } catch (err) {
     console.error('GET /api/backlog/repos error:', err);
@@ -200,33 +200,33 @@ router.post('/', requireAuth, async (req, res) => {
   try {
     const { title, description, labels, priority, project_id, repo_url } = req.body;
     const tenantId = req.user.tenant_id;
-    
+
     if (!title || title.trim().length === 0) {
       return res.status(400).json({ error: 'Title is required' });
     }
-    
+
     if (title.length > 255) {
       return res.status(400).json({ error: 'Title must be 255 characters or less' });
     }
-    
+
     const itemPriority = VALID_PRIORITIES.includes(priority) ? priority : 0;
     const itemLabels = Array.isArray(labels) ? labels : [];
-    
+
     const id = uuidv4();
-    
+
     // Get max rank for ordering
     const maxRank = await queryOne(
       'SELECT COALESCE(MAX(rank), 0) + 1 as next_rank FROM backlog_items WHERE tenant_id = $1',
       [tenantId]
     );
-    
+
     await execute(`
       INSERT INTO backlog_items (id, tenant_id, title, description, labels, priority, rank, project_id, repo_url, created_by, state)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'draft')
     `, [id, tenantId, title.trim(), description || null, JSON.stringify(itemLabels), itemPriority, maxRank.next_rank, project_id || null, repo_url || null, req.user.id]);
-    
+
     const item = await getBacklogItem(id, tenantId);
-    
+
     // Broadcast to tenant's backlog room
     broadcast.toRoom(`backlog:${tenantId}`, 'backlog:created', {
       id: item.id,
@@ -235,7 +235,7 @@ router.post('/', requireAuth, async (req, res) => {
       priority: item.priority,
       repo_url: item.repo_url
     });
-    
+
     res.status(201).json(item);
   } catch (err) {
     console.error('POST /api/backlog error:', err);
@@ -250,11 +250,11 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const tenantId = req.user.tenant_id;
     const { state, priority, label, search, limit = 50, offset = 0 } = req.query;
-    
+
     let sql = 'SELECT * FROM backlog_items WHERE tenant_id = $1';
     const params = [tenantId];
     let paramIndex = 2;
-    
+
     // Filter by state
     if (state === 'all') {
       // 'all' means everything except archived
@@ -266,35 +266,35 @@ router.get('/', requireAuth, async (req, res) => {
       // Default: exclude archived and promoted
       sql += ` AND state NOT IN ('archived', 'promoted')`;
     }
-    
+
     // Filter by priority
     if (priority !== undefined && VALID_PRIORITIES.includes(parseInt(priority))) {
       sql += ` AND priority = $${paramIndex++}`;
       params.push(parseInt(priority));
     }
-    
+
     // Filter by label (JSONB containment)
     if (label) {
       sql += ` AND labels @> $${paramIndex++}::jsonb`;
       params.push(JSON.stringify([label]));
     }
-    
+
     // Full-text search
     if (search && search.trim().length > 0) {
       sql += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
       params.push(`%${search.trim()}%`);
       paramIndex++;
     }
-    
+
     // Order by priority (high first), then rank
     sql += ' ORDER BY priority DESC, rank ASC';
-    
+
     // Pagination
     sql += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
     params.push(parseInt(limit), parseInt(offset));
-    
+
     const items = await queryAll(sql, params);
-    
+
     // Get total count for pagination
     let countSql = 'SELECT COUNT(*) as total FROM backlog_items WHERE tenant_id = $1';
     const countParams = [tenantId];
@@ -308,7 +308,7 @@ router.get('/', requireAuth, async (req, res) => {
       countSql += ` AND state NOT IN ('archived', 'promoted')`;
     }
     const countResult = await queryOne(countSql, countParams);
-    
+
     // Get counts by state for all filter tabs
     const stateCountsResult = await queryAll(
       "SELECT state, COUNT(*)::int as count FROM backlog_items WHERE tenant_id = $1 GROUP BY state",
@@ -321,7 +321,7 @@ router.get('/', requireAuth, async (req, res) => {
         stateCounts.all += row.count;
       }
     });
-    
+
     res.json({
       items,
       total: parseInt(countResult.total),
@@ -360,17 +360,17 @@ router.patch('/:id', requireAuth, async (req, res) => {
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     // Can't edit promoted items
     if (item.state === 'promoted') {
       return res.status(400).json({ error: 'Cannot edit promoted items' });
     }
-    
+
     const { title, description, labels, priority, rank, project_id, repo_url } = req.body;
     const updates = [];
     const params = [];
     let paramIndex = 1;
-    
+
     if (title !== undefined) {
       if (title.trim().length === 0) {
         return res.status(400).json({ error: 'Title cannot be empty' });
@@ -378,54 +378,54 @@ router.patch('/:id', requireAuth, async (req, res) => {
       updates.push(`title = $${paramIndex++}`);
       params.push(title.trim());
     }
-    
+
     if (description !== undefined) {
       updates.push(`description = $${paramIndex++}`);
       params.push(description);
     }
-    
+
     if (labels !== undefined && Array.isArray(labels)) {
       updates.push(`labels = $${paramIndex++}`);
       params.push(JSON.stringify(labels));
     }
-    
+
     if (priority !== undefined && VALID_PRIORITIES.includes(priority)) {
       updates.push(`priority = $${paramIndex++}`);
       params.push(priority);
     }
-    
+
     if (rank !== undefined) {
       updates.push(`rank = $${paramIndex++}`);
       params.push(rank);
     }
-    
+
     if (project_id !== undefined) {
       updates.push(`project_id = ${paramIndex++}`);
       params.push(project_id);
     }
-    
+
     if (repo_url !== undefined) {
       updates.push(`repo_url = ${paramIndex++}`);
       params.push(repo_url);
     }
-    
+
     if (updates.length === 0) {
       return res.status(400).json({ error: 'No valid updates provided' });
     }
-    
+
     params.push(req.params.id, req.user.tenant_id);
     await execute(
       `UPDATE backlog_items SET ${updates.join(', ')} WHERE id = $${paramIndex++} AND tenant_id = $${paramIndex}`,
       params
     );
-    
+
     const updated = await getBacklogItem(req.params.id, req.user.tenant_id);
-    
+
     broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:updated', {
       id: updated.id,
       changes: req.body
     });
-    
+
     res.json(updated);
   } catch (err) {
     console.error('PATCH /api/backlog/:id error:', err);
@@ -442,20 +442,20 @@ router.delete('/:id', requireAuth, async (req, res) => {
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     if (item.state === 'promoted') {
       return res.status(400).json({ error: 'Cannot delete promoted items' });
     }
-    
+
     await execute(
       `UPDATE backlog_items SET state = 'archived' WHERE id = $1 AND tenant_id = $2`,
       [req.params.id, req.user.tenant_id]
     );
-    
+
     broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:archived', {
       id: req.params.id
     });
-    
+
     res.json({ success: true, message: 'Backlog item archived' });
   } catch (err) {
     console.error('DELETE /api/backlog/:id error:', err);
@@ -477,20 +477,20 @@ router.post('/:id/start-chat', requireAuth, async (req, res) => {
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     if (!['draft', 'refined'].includes(item.state)) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: `Cannot start chat from ${item.state} state`,
         allowedStates: ['draft', 'refined']
       });
     }
-    
+
     console.log(`[Backlog] Starting chat for item ${item.id}, gathering context...`);
-    
+
     // Gather rich context from attachments (GitHub, docs, images)
     const context = await gatherBacklogContext(item, req.user.tenant_id);
     console.log(`[Backlog] Context gathered: ${context.githubContent?.length || 0} GitHub, ${context.documentContent?.length || 0} docs, ${context.imageDescriptions?.length || 0} images`);
-    
+
     // Fetch RAG context if repo_url is set (backwards compatibility)
     let ragContext = '';
     if (item.repo_url) {
@@ -499,21 +499,32 @@ router.post('/:id/start-chat', requireAuth, async (req, res) => {
         ragContext = ragResult.context;
       }
     }
-    
+
     // Generate system prompt with all context
     const systemPrompt = generateClarifyingPrompt(item, context, ragContext);
-    
+
     // Generate initial AI message
-    const aiResult = await chat({ messages: [
-      { role: 'user', content: 'Please start the clarification conversation.' }
-    ], system: systemPrompt });
-    
-    const initialMessage = {
+    const userContent = `Idea: ${item.title}\n${item.description || ''}`.trim();
+    const initialUserMessage = {
+      role: 'user',
+      content: userContent,
+      timestamp: new Date().toISOString()
+    };
+
+    const aiResult = await chat({
+      messages: [
+        { role: 'user', content: userContent }
+      ], system: systemPrompt
+    });
+
+    const initialAiMessage = {
       role: 'assistant',
       content: aiResult.success ? aiResult.content : "AI error: " + aiResult.error,
       timestamp: new Date().toISOString()
     };
-    
+
+    const transcript = [initialUserMessage, initialAiMessage];
+
     // Update item state and save first message
     await execute(`
       UPDATE backlog_items 
@@ -521,20 +532,20 @@ router.post('/:id/start-chat', requireAuth, async (req, res) => {
           chat_transcript = $1,
           chat_started_at = CURRENT_TIMESTAMP
       WHERE id = $2 AND tenant_id = $3
-    `, [JSON.stringify([initialMessage]), req.params.id, req.user.tenant_id]);
-    
+    `, [JSON.stringify(transcript), req.params.id, req.user.tenant_id]);
+
     broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:updated', {
       id: req.params.id,
       changes: { state: 'chatting' }
     });
-    
+
     // Fetch updated item to return to client
     const updatedItem = await getBacklogItem(req.params.id, req.user.tenant_id);
-    
+
     res.json({
       success: true,
       item: updatedItem,
-      chat_history: [initialMessage],
+      chat_history: transcript,
       context_summary: {
         github_sources: context.githubContent?.length || 0,
         documents: context.documentContent?.length || 0,
@@ -558,24 +569,24 @@ router.post('/:id/chat', requireAuth, async (req, res) => {
     if (!message || message.trim().length === 0) {
       return res.status(400).json({ error: 'Message is required' });
     }
-    
+
     const item = await getBacklogItem(req.params.id, req.user.tenant_id);
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     if (item.state !== 'chatting') {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: `Cannot chat in ${item.state} state`,
         hint: 'Call /start-chat first'
       });
     }
-    
+
     // Parse existing transcript
-    const transcript = Array.isArray(item.chat_transcript) 
-      ? item.chat_transcript 
+    const transcript = Array.isArray(item.chat_transcript)
+      ? item.chat_transcript
       : JSON.parse(item.chat_transcript || '[]');
-    
+
     // Add user message
     const userMessage = {
       role: 'user',
@@ -583,13 +594,13 @@ router.post('/:id/chat', requireAuth, async (req, res) => {
       timestamp: new Date().toISOString()
     };
     transcript.push(userMessage);
-    
+
     // Build messages for Claude (convert to Claude format)
     const claudeMessages = transcript.map(m => ({
       role: m.role === 'assistant' ? 'assistant' : 'user',
       content: m.content
     }));
-    
+
     // Fetch RAG context if repo_url is set (use conversation context for query)
     let ragContext = '';
     if (item.repo_url) {
@@ -600,30 +611,30 @@ router.post('/:id/chat', requireAuth, async (req, res) => {
         ragContext = ragResult.context;
       }
     }
-    
+
     // Get AI response with RAG context
     const systemPrompt = generateClarifyingPrompt(item, ragContext);
     const aiResult2 = await chat({ messages: claudeMessages, system: systemPrompt });
     const aiContent = aiResult2.success ? aiResult2.content : "AI error: " + aiResult2.error;
-    
+
     const aiMessage = {
       role: 'assistant',
       content: aiContent,
       timestamp: new Date().toISOString()
     };
     transcript.push(aiMessage);
-    
+
     // Update transcript
     await execute(`
       UPDATE backlog_items SET chat_transcript = $1 WHERE id = $2 AND tenant_id = $3
     `, [JSON.stringify(transcript), req.params.id, req.user.tenant_id]);
-    
+
     // Broadcast new message
     broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:chat_message', {
       backlogId: req.params.id,
       messages: [userMessage, aiMessage]
     });
-    
+
     res.json({
       user_message: userMessage,
       ai_response: aiMessage,
@@ -645,19 +656,19 @@ router.post('/:id/end-chat', requireAuth, async (req, res) => {
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     if (item.state !== 'chatting') {
       return res.status(400).json({ error: 'Not currently chatting' });
     }
-    
-    const transcript = Array.isArray(item.chat_transcript) 
-      ? item.chat_transcript 
+
+    const transcript = Array.isArray(item.chat_transcript)
+      ? item.chat_transcript
       : JSON.parse(item.chat_transcript || '[]');
-    
+
     // Generate summary if there's meaningful conversation
     let summary = null;
     let enrichedDescription = item.description;
-    
+
     if (transcript.length >= 2) {
       const summaryPrompt = `Based on this conversation about a project idea, provide:
 1. A brief summary (2-3 sentences) of key decisions made
@@ -676,10 +687,12 @@ Respond in JSON format:
 }`;
 
       try {
-        const summaryResult = await chat({ messages: [
-          { role: 'user', content: summaryPrompt }
-        ], system: 'You are a technical product analyst. Respond only with valid JSON.' });
-        
+        const summaryResult = await chat({
+          messages: [
+            { role: 'user', content: summaryPrompt }
+          ], system: 'You are a technical product analyst. Respond only with valid JSON.'
+        });
+
         const parsed = JSON.parse(summaryResult.content);
         summary = parsed.summary;
         enrichedDescription = parsed.enriched_description || item.description;
@@ -688,7 +701,7 @@ Respond in JSON format:
         summary = 'Chat session completed.';
       }
     }
-    
+
     // Update to refined state
     await execute(`
       UPDATE backlog_items 
@@ -697,15 +710,15 @@ Respond in JSON format:
           enriched_description = $2
       WHERE id = $3 AND tenant_id = $4
     `, [summary, enrichedDescription, req.params.id, req.user.tenant_id]);
-    
+
     broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:updated', {
       id: req.params.id,
       changes: { state: 'refined', chat_summary: summary }
     });
-    
+
     // Fetch updated item to return to client
     const updatedItem = await getBacklogItem(req.params.id, req.user.tenant_id);
-    
+
     res.json({
       success: true,
       item: updatedItem
@@ -729,11 +742,11 @@ router.post('/:id/abandon-chat', requireAuth, async (req, res) => {
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     if (item.state !== 'chatting') {
       return res.status(400).json({ error: 'Item is not in chatting state' });
     }
-    
+
     await execute(`
       UPDATE backlog_items 
       SET state = 'draft', 
@@ -741,15 +754,15 @@ router.post('/:id/abandon-chat', requireAuth, async (req, res) => {
           chat_started_at = NULL
       WHERE id = $1 AND tenant_id = $2
     `, [req.params.id, req.user.tenant_id]);
-    
+
     broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:updated', {
       id: req.params.id,
       changes: { state: 'draft' }
     });
-    
+
     // Fetch updated item to return to client
     const updatedItem = await getBacklogItem(req.params.id, req.user.tenant_id);
-    
+
     res.json({
       success: true,
       item: updatedItem
@@ -774,11 +787,11 @@ router.post('/:id/unpromote', requireAuth, async (req, res) => {
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     if (item.state !== 'promoted') {
       return res.status(400).json({ error: 'Item is not in promoted state' });
     }
-    
+
     // Delete the HITL session if it exists
     if (item.hitl_session_id) {
       await execute(`
@@ -786,7 +799,7 @@ router.post('/:id/unpromote', requireAuth, async (req, res) => {
         WHERE id = $1 AND tenant_id = $2
       `, [item.hitl_session_id, req.user.tenant_id]);
     }
-    
+
     // Reset backlog item to draft
     await execute(`
       UPDATE backlog_items 
@@ -797,14 +810,14 @@ router.post('/:id/unpromote', requireAuth, async (req, res) => {
           enriched_description = NULL
       WHERE id = $1 AND tenant_id = $2
     `, [req.params.id, req.user.tenant_id]);
-    
+
     broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:updated', {
       id: req.params.id,
       changes: { state: 'draft', hitl_session_id: null }
     });
-    
+
     const updatedItem = await getBacklogItem(req.params.id, req.user.tenant_id);
-    
+
     res.json({
       success: true,
       item: updatedItem
@@ -825,38 +838,38 @@ router.post('/:id/unpromote', requireAuth, async (req, res) => {
 router.post('/:id/promote', requireAuth, async (req, res) => {
   try {
     const { skip_clarification = false } = req.body || {};
-    
+
     const item = await getBacklogItem(req.params.id, req.user.tenant_id);
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     if (!['draft', 'refined'].includes(item.state)) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: `Cannot promote from ${item.state} state`,
         allowedStates: ['draft', 'refined']
       });
     }
-    
+
     // Create HITL session with backlog context
     const sessionId = uuidv4();
     // Check if refinement produced chat history
-    const hasRefinementHistory = item.chat_transcript && 
-      (Array.isArray(item.chat_transcript) ? item.chat_transcript.length > 0 : 
-       JSON.parse(item.chat_transcript || '[]').length > 0);
-    
+    const hasRefinementHistory = item.chat_transcript &&
+      (Array.isArray(item.chat_transcript) ? item.chat_transcript.length > 0 :
+        JSON.parse(item.chat_transcript || '[]').length > 0);
+
     // If has refinement history, start in clarifying state so Generate Spec is enabled
-    const initialState = skip_clarification ? 'ready_for_docs' : 
-                         hasRefinementHistory ? 'clarifying' : 'input';
-    
+    const initialState = skip_clarification ? 'ready_for_docs' :
+      hasRefinementHistory ? 'clarifying' : 'input';
+
     // Use enriched description if available, otherwise original
     const description = item.enriched_description || item.description || '';
-    
+
     // Build initial chat history from backlog transcript
     let chatHistory = [];
     if (item.chat_transcript && item.chat_transcript.length > 0) {
-      const transcript = Array.isArray(item.chat_transcript) 
-        ? item.chat_transcript 
+      const transcript = Array.isArray(item.chat_transcript)
+        ? item.chat_transcript
         : JSON.parse(item.chat_transcript);
       chatHistory = transcript.map(m => ({
         role: m.role,
@@ -864,7 +877,7 @@ router.post('/:id/promote', requireAuth, async (req, res) => {
         timestamp: m.timestamp
       }));
     }
-    
+
     // Create the HITL session
     await execute(`
       INSERT INTO hitl_sessions (
@@ -881,7 +894,7 @@ router.post('/:id/promote', requireAuth, async (req, res) => {
       req.params.id,
       item.repo_url || null  // Pass repo_url from backlog item
     ]);
-    
+
     // Insert refinement chat messages into hitl_messages table
     // This ensures buildConversationHistory() finds the prior context
     if (chatHistory.length > 0) {
@@ -900,7 +913,7 @@ router.post('/:id/promote', requireAuth, async (req, res) => {
       }
       console.log(`[Promote] Migrated ${chatHistory.length} refinement messages to hitl_messages`);
     }
-    
+
     // Trigger clarifying agent to analyze refinement history and set progress
     if (hasRefinementHistory) {
       try {
@@ -928,20 +941,20 @@ router.post('/:id/promote', requireAuth, async (req, res) => {
           promoted_at = CURRENT_TIMESTAMP
       WHERE id = $2 AND tenant_id = $3
     `, [sessionId, req.params.id, req.user.tenant_id]);
-    
+
     // Broadcast events
     broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:promoted', {
       backlogId: req.params.id,
       hitlSessionId: sessionId
     });
-    
+
     broadcast.toRoom(`tenant:${req.user.tenant_id}`, 'session:created', {
       id: sessionId,
       state: initialState,
       source: 'backlog',
       projectName: item.title
     });
-    
+
     res.json({
       success: true,
       backlog_state: 'promoted',
@@ -969,18 +982,18 @@ router.post('/:id/promote', requireAuth, async (req, res) => {
 router.post('/reorder', requireAuth, async (req, res) => {
   try {
     const { items } = req.body; // Array of { id, rank, priority? }
-    
+
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Items array is required' });
     }
-    
+
     // Update each item's rank (and optionally priority)
     for (const item of items) {
       if (!item.id || typeof item.rank !== 'number') continue;
-      
+
       let sql = 'UPDATE backlog_items SET rank = $1';
       const params = [item.rank];
-      
+
       if (item.priority !== undefined && VALID_PRIORITIES.includes(item.priority)) {
         sql += ', priority = $2 WHERE id = $3 AND tenant_id = $4';
         params.push(item.priority, item.id, req.user.tenant_id);
@@ -988,14 +1001,14 @@ router.post('/reorder', requireAuth, async (req, res) => {
         sql += ' WHERE id = $2 AND tenant_id = $3';
         params.push(item.id, req.user.tenant_id);
       }
-      
+
       await execute(sql, params);
     }
-    
+
     broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:reordered', {
       count: items.length
     });
-    
+
     res.json({ success: true, updated: items.length });
   } catch (err) {
     console.error('POST /api/backlog/reorder error:', err);
@@ -1009,35 +1022,35 @@ router.post('/reorder', requireAuth, async (req, res) => {
 router.post('/bulk-label', requireAuth, async (req, res) => {
   try {
     const { item_ids, add_labels = [], remove_labels = [] } = req.body;
-    
+
     if (!Array.isArray(item_ids) || item_ids.length === 0) {
       return res.status(400).json({ error: 'item_ids array is required' });
     }
-    
+
     for (const itemId of item_ids) {
       const item = await getBacklogItem(itemId, req.user.tenant_id);
       if (!item) continue;
-      
-      let labels = Array.isArray(item.labels) 
-        ? item.labels 
+
+      let labels = Array.isArray(item.labels)
+        ? item.labels
         : JSON.parse(item.labels || '[]');
-      
+
       // Add new labels
       for (const label of add_labels) {
         if (!labels.includes(label)) {
           labels.push(label);
         }
       }
-      
+
       // Remove labels
       labels = labels.filter(l => !remove_labels.includes(l));
-      
+
       await execute(
         'UPDATE backlog_items SET labels = $1 WHERE id = $2 AND tenant_id = $3',
         [JSON.stringify(labels), itemId, req.user.tenant_id]
       );
     }
-    
+
     res.json({ success: true, updated: item_ids.length });
   } catch (err) {
     console.error('POST /api/backlog/bulk-label error:', err);
@@ -1105,14 +1118,14 @@ router.get('/:id/attachments', requireAuth, async (req, res) => {
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     const attachments = await queryAll(`
       SELECT id, attachment_type, name, url, mime_type, file_size, git_metadata, created_at
       FROM backlog_attachments 
       WHERE backlog_item_id = $1 AND tenant_id = $2 AND deleted_at IS NULL
       ORDER BY created_at DESC
     `, [req.params.id, req.user.tenant_id]);
-    
+
     res.json({ attachments });
   } catch (err) {
     console.error('GET /api/backlog/:id/attachments error:', err);
@@ -1130,14 +1143,14 @@ router.post('/:id/attachments/file', requireAuth, upload.single('file'), async (
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
-    
+
     const attachmentId = uuidv4();
     const fileUrl = `/uploads/${req.user.tenant_id}/${req.params.id}/${req.file.filename}`;
-    
+
     await execute(`
       INSERT INTO backlog_attachments 
         (id, backlog_item_id, tenant_id, attachment_type, name, url, mime_type, file_size, created_by)
@@ -1146,7 +1159,7 @@ router.post('/:id/attachments/file', requireAuth, upload.single('file'), async (
       attachmentId, req.params.id, req.user.tenant_id,
       req.file.originalname, fileUrl, req.file.mimetype, req.file.size, req.user.id
     ]);
-    
+
     const attachment = await queryOne('SELECT * FROM backlog_attachments WHERE id = $1', [attachmentId]);
     res.status(201).json({ attachment });
   } catch (err) {
@@ -1165,22 +1178,22 @@ router.post('/:id/attachments/link', requireAuth, async (req, res) => {
     if (!item) {
       return res.status(404).json({ error: 'Backlog item not found' });
     }
-    
+
     const { url, name } = req.body;
     if (!url || !url.trim()) {
       return res.status(400).json({ error: 'URL is required' });
     }
-    
+
     // Determine if this is a git link
     const gitPatterns = [
       /github\.com\/([^\/]+)\/([^\/]+)/,
       /gitlab\.com\/([^\/]+)\/([^\/]+)/,
       /bitbucket\.org\/([^\/]+)\/([^\/]+)/
     ];
-    
+
     let attachmentType = 'external_link';
     let gitMetadata = null;
-    
+
     for (const pattern of gitPatterns) {
       const match = url.match(pattern);
       if (match) {
@@ -1190,15 +1203,15 @@ router.post('/:id/attachments/link', requireAuth, async (req, res) => {
           repo: match[2],
           platform: url.includes('github') ? 'github' : url.includes('gitlab') ? 'gitlab' : 'bitbucket',
           type: url.includes('/pull/') || url.includes('/merge_requests/') ? 'pr' :
-                url.includes('/issues/') ? 'issue' : url.includes('/commit/') ? 'commit' : 'repo'
+            url.includes('/issues/') ? 'issue' : url.includes('/commit/') ? 'commit' : 'repo'
         };
         break;
       }
     }
-    
+
     const attachmentId = uuidv4();
     const displayName = name?.trim() || (gitMetadata ? `${gitMetadata.owner}/${gitMetadata.repo}` : url);
-    
+
     await execute(`
       INSERT INTO backlog_attachments 
         (id, backlog_item_id, tenant_id, attachment_type, name, url, git_metadata, created_by)
@@ -1207,7 +1220,7 @@ router.post('/:id/attachments/link', requireAuth, async (req, res) => {
       attachmentId, req.params.id, req.user.tenant_id, attachmentType,
       displayName, url.trim(), gitMetadata ? JSON.stringify(gitMetadata) : null, req.user.id
     ]);
-    
+
     const attachment = await queryOne('SELECT * FROM backlog_attachments WHERE id = $1', [attachmentId]);
     res.status(201).json({ attachment });
   } catch (err) {
@@ -1226,14 +1239,14 @@ router.delete('/:id/attachments/:attachmentId', requireAuth, async (req, res) =>
       SELECT * FROM backlog_attachments 
       WHERE id = $1 AND backlog_item_id = $2 AND tenant_id = $3 AND deleted_at IS NULL
     `, [req.params.attachmentId, req.params.id, req.user.tenant_id]);
-    
+
     if (!attachment) {
       return res.status(404).json({ error: 'Attachment not found' });
     }
-    
+
     // Soft delete
     await execute('UPDATE backlog_attachments SET deleted_at = NOW() WHERE id = $1', [req.params.attachmentId]);
-    
+
     // Delete file from disk if it's a file attachment
     if (attachment.attachment_type === 'file') {
       const filePath = `/opt/swarm-app${attachment.url}`;
@@ -1243,7 +1256,7 @@ router.delete('/:id/attachments/:attachmentId', requireAuth, async (req, res) =>
         console.warn('Could not delete file:', filePath, e.message);
       }
     }
-    
+
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/backlog/:id/attachments/:attachmentId error:', err);

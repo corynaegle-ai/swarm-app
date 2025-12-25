@@ -82,6 +82,10 @@ function getPool() {
 }
 
 module.exports = {
+  // SQLite-style aliases for compatibility
+  get: queryOne,
+  all: queryAll,
+  run: execute,
   getPool,
   pool,
   query,

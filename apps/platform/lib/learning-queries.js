@@ -6,13 +6,19 @@
 
 const db = require('../db');
 
+// UUID validation helper - skip tenant filter if not valid UUID
+function isValidUUID(str) {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
 /**
  * Get execution statistics for a date range
  */
 async function getExecutionStats(startDate, endDate, tenantId = null) {
   const params = [startDate || '2020-01-01', endDate || '2099-12-31'];
   let tenantFilter = '';
-  if (tenantId) {
+  if (tenantId && isValidUUID(tenantId)) {
     tenantFilter = 'AND tenant_id = $3';
     params.push(tenantId);
   }
@@ -52,7 +58,7 @@ async function getCommonErrors(limit = 10, category = null, tenantId = null) {
     params.push(category);
     filters.push(`error_category = $${params.length}`);
   }
-  if (tenantId) {
+  if (tenantId && isValidUUID(tenantId)) {
     params.push(tenantId);
     filters.push(`tenant_id = $${params.length}`);
   }
@@ -79,7 +85,7 @@ async function getCommonErrors(limit = 10, category = null, tenantId = null) {
 async function getSuccessPatterns(minSuccessRate = 80, tenantId = null) {
   const params = [minSuccessRate];
   let tenantFilter = '';
-  if (tenantId) {
+  if (tenantId && isValidUUID(tenantId)) {
     params.push(tenantId);
     tenantFilter = `AND tenant_id = $${params.length}`;
   }
@@ -108,7 +114,7 @@ async function getSuccessPatterns(minSuccessRate = 80, tenantId = null) {
 async function getTokenUsageTrend(days = 7, tenantId = null) {
   const params = [days];
   let tenantFilter = '';
-  if (tenantId) {
+  if (tenantId && isValidUUID(tenantId)) {
     params.push(tenantId);
     tenantFilter = `AND tenant_id = $${params.length}`;
   }
@@ -135,7 +141,7 @@ async function getTokenUsageTrend(days = 7, tenantId = null) {
 async function getErrorDistribution(tenantId = null) {
   const params = [];
   let tenantFilter = '';
-  if (tenantId) {
+  if (tenantId && isValidUUID(tenantId)) {
     params.push(tenantId);
     tenantFilter = `AND tenant_id = $${params.length}`;
   }
@@ -158,7 +164,7 @@ async function getErrorDistribution(tenantId = null) {
 async function getRecentExecutions(limit = 20, tenantId = null) {
   const params = [limit];
   let tenantFilter = '';
-  if (tenantId) {
+  if (tenantId && isValidUUID(tenantId)) {
     params.push(tenantId);
     tenantFilter = `AND tenant_id = $${params.length}`;
   }

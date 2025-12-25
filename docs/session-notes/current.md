@@ -50,3 +50,36 @@ pm2 restart swarm-platform-dev
 # Test HITL endpoint
 curl localhost:8080/api/hitl/6812bebd-3d71-4a1a-9c1a-34cb4c27c8af | jq .session.state
 ```
+
+## Session: December 25, 2024 - Sentinel Integration & Backlog Fix
+
+### Status: ✅ COMPLETED
+
+---
+
+## Changes Summary
+
+### 1. Sentinel Feedback Loop
+**Feature**: Implemented automatic ticket retries with `sentinel_feedback`.
+**Changes**:
+- `apps/platform/routes/tickets.js`: Added retry logic to `PUT /:id` and `POST /:id/verify`. Only tickets with valid `retry_after` timestamps are polled.
+- `apps/platform/code/forge-agent-v4.js`: Injected `sentinel_feedback` into agent prompt.
+- `apps/platform/lib/learning-queries.js`: Migrated to PostgreSQL and filtered `manual_review` errors from analytics.
+
+### 2. Backlog Refinement Fix
+**Bug**: Refinement session (`chatting` state) not reloading history on page refresh.
+**Root Cause**: Frontend expected `chat_history` but list API returns `chat_transcript`.
+**Fix**: Updated `Backlog.jsx` to fallback to `chat_transcript` and parse JSON.
+
+### 3. Verification
+- **Sentinel**: Verified via end-to-end script `test-sentinel-retry.js`. Ticket transitions: `failed` -> `pending` (Retry Count: 1).
+- **Backlog**: Verified code logic handles property mismatch.
+
+---
+
+## Commands Reference
+
+```bash
+# Verify End-to-End Retry
+node apps/platform/tests/test-sentinel-retry.js
+```

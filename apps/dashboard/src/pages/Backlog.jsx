@@ -35,13 +35,13 @@ export default function Backlog() {
   const [quickTitle, setQuickTitle] = useState('');
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
-  
+
   // Chat states
   const [chatHistory, setChatHistory] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatEndRef = useRef(null);
-  
+
   // Modals
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPromoteModal, setShowPromoteModal] = useState(false);
@@ -100,7 +100,7 @@ export default function Backlog() {
   const handleQuickAdd = async (e) => {
     e.preventDefault();
     if (!quickTitle.trim()) return;
-    
+
     setActionLoading('create');
     try {
       const res = await apiCall('/api/backlog', {
@@ -128,14 +128,14 @@ export default function Backlog() {
   // Update item
   const handleUpdate = async () => {
     if (!selectedItem) return;
-    
+
     setActionLoading('update');
     try {
       const res = await apiCall(`/api/backlog/${selectedItem.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ 
-          title: editTitle.trim(), 
-          description: editDescription.trim() 
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          description: editDescription.trim()
         })
       });
       if (res.ok) {
@@ -157,7 +157,7 @@ export default function Backlog() {
   // Delete item
   const handleDelete = async () => {
     if (!selectedItem) return;
-    
+
     setActionLoading('delete');
     try {
       const res = await apiCall(`/api/backlog/${selectedItem.id}`, {
@@ -208,12 +208,12 @@ export default function Backlog() {
   // Send chat message
   const handleSendMessage = async () => {
     if (!chatInput.trim() || !selectedItem || chatLoading) return;
-    
+
     const userMessage = chatInput.trim();
     setChatInput('');
     setChatHistory(prev => [...prev, { role: 'user', content: userMessage }]);
     setChatLoading(true);
-    
+
     try {
       const res = await apiCall(`/api/backlog/${selectedItem.id}/chat`, {
         method: 'POST',
@@ -237,7 +237,7 @@ export default function Backlog() {
   // End chat refinement
   const handleEndChat = async () => {
     if (!selectedItem) return;
-    
+
     setActionLoading('end-chat');
     try {
       const res = await apiCall(`/api/backlog/${selectedItem.id}/end-chat`, {
@@ -266,7 +266,7 @@ export default function Backlog() {
   // Abandon chat
   const handleAbandonChat = async () => {
     if (!selectedItem) return;
-    
+
     setActionLoading('abandon');
     try {
       const res = await apiCall(`/api/backlog/${selectedItem.id}/abandon-chat`, {
@@ -292,7 +292,7 @@ export default function Backlog() {
   // Unpromote - abandon HITL session and return to draft
   const handleUnpromote = async () => {
     if (!selectedItem) return;
-    
+
     setActionLoading('unpromote');
     try {
       const res = await apiCall(`/api/backlog/${selectedItem.id}/unpromote`, {
@@ -317,7 +317,7 @@ export default function Backlog() {
   // Promote to HITL session
   const handlePromote = async () => {
     if (!selectedItem) return;
-    
+
     setActionLoading('promote');
     try {
       const res = await apiCall(`/api/backlog/${selectedItem.id}/promote`, {
@@ -353,7 +353,13 @@ export default function Backlog() {
     setEditTitle(item.title);
     setEditDescription(item.enriched_description || item.description || '');
     if (item.state === 'chatting') {
-      setChatHistory(item.chat_history || []);
+      const history = item.chat_history || item.chat_transcript || [];
+      try {
+        setChatHistory(typeof history === 'string' ? JSON.parse(history) : history);
+      } catch (e) {
+        console.error('Failed to parse chat history', e);
+        setChatHistory([]);
+      }
       setChatMode(true);
     } else {
       setChatMode(false);
@@ -399,7 +405,7 @@ export default function Backlog() {
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !selectedItem) return;
-    
+
     // Check file size (10MB limit)
     const MAX_FILE_SIZE = 10 * 1024 * 1024;
     if (file.size > MAX_FILE_SIZE) {
@@ -407,20 +413,20 @@ export default function Backlog() {
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
-    
+
     const formData = new FormData();
     formData.append('file', file);
-    
+
     try {
       setUploadProgress(10);
-      
+
       const res = await apiCall(`/api/backlog/${selectedItem.id}/attachments/file`, {
         method: 'POST',
         body: formData  // apiCall now handles FormData correctly
       });
-      
+
       setUploadProgress(90);
-      
+
       if (res.ok) {
         const data = await res.json();
         setAttachments(prev => [data.attachment, ...prev]);
@@ -440,13 +446,13 @@ export default function Backlog() {
 
   const handleAddLink = async () => {
     if (!linkUrl.trim() || !selectedItem) return;
-    
+
     try {
       const res = await apiCall(`/api/backlog/${selectedItem.id}/attachments/link`, {
         method: 'POST',
         body: JSON.stringify({ url: linkUrl, name: linkName })
       });
-      
+
       if (res.ok) {
         const data = await res.json();
         setAttachments(prev => [data.attachment, ...prev]);
@@ -465,13 +471,13 @@ export default function Backlog() {
 
   const handleDeleteAttachment = async (attachmentId) => {
     if (!selectedItem) return;
-    
+
     try {
       const res = await apiCall(
         `/api/backlog/${selectedItem.id}/attachments/${attachmentId}`,
         { method: 'DELETE' }
       );
-      
+
       if (res.ok) {
         setAttachments(prev => prev.filter(a => a.id !== attachmentId));
         toast.success('Attachment removed');
@@ -512,31 +518,31 @@ export default function Backlog() {
 
         {/* Filter Tabs */}
         <div className="filter-tabs">
-          <button 
+          <button
             className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
             onClick={() => setFilter('all')}
           >
             All <span className="count">{counts.all}</span>
           </button>
-          <button 
+          <button
             className={`filter-tab ${filter === 'draft' ? 'active' : ''}`}
             onClick={() => setFilter('draft')}
           >
             Draft <span className="count">{counts.draft}</span>
           </button>
-          <button 
+          <button
             className={`filter-tab ${filter === 'chatting' ? 'active' : ''}`}
             onClick={() => setFilter('chatting')}
           >
             Chatting <span className="count">{counts.chatting}</span>
           </button>
-          <button 
+          <button
             className={`filter-tab ${filter === 'refined' ? 'active' : ''}`}
             onClick={() => setFilter('refined')}
           >
             Refined <span className="count">{counts.refined}</span>
           </button>
-          <button 
+          <button
             className={`filter-tab ${filter === 'promoted' ? 'active' : ''}`}
             onClick={() => setFilter('promoted')}
           >
@@ -559,15 +565,15 @@ export default function Backlog() {
         ) : (
           <div className="backlog-grid">
             {filteredItems.map(item => (
-              <div 
-                key={item.id} 
+              <div
+                key={item.id}
                 className="backlog-card"
                 onClick={() => openItem(item)}
               >
                 <div className="card-header">
-                  <span 
+                  <span
                     className="state-badge"
-                    style={{ 
+                    style={{
                       color: STATES[item.state]?.color,
                       background: STATES[item.state]?.bg
                     }}
@@ -587,7 +593,7 @@ export default function Backlog() {
                 <div className="card-actions">
                   {item.state === 'draft' && (
                     <>
-                      <button 
+                      <button
                         className="btn-action"
                         onClick={(e) => { e.stopPropagation(); handleStartChat(item); }}
                         disabled={actionLoading === `start-${item.id}`}
@@ -599,7 +605,7 @@ export default function Backlog() {
                         )}
                         Refine
                       </button>
-                      <button 
+                      <button
                         className="btn-action promote"
                         onClick={(e) => { e.stopPropagation(); setSelectedItem(item); setShowPromoteModal(true); }}
                       >
@@ -615,7 +621,7 @@ export default function Backlog() {
                     </button>
                   )}
                   {item.state === 'refined' && (
-                    <button 
+                    <button
                       className="btn-action promote"
                       onClick={(e) => { e.stopPropagation(); setSelectedItem(item); setShowPromoteModal(true); }}
                     >
@@ -624,7 +630,7 @@ export default function Backlog() {
                     </button>
                   )}
                   {item.state === 'promoted' && item.hitl_session_id && (
-                    <button 
+                    <button
                       className="btn-action linked"
                       onClick={(e) => { e.stopPropagation(); navigate(`/design/${item.hitl_session_id}`); }}
                     >
@@ -678,15 +684,15 @@ export default function Backlog() {
                   <span className="repo-hint">Select a repo to enable RAG context during refinement</span>
                 </div>
                 <div className="modal-actions">
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     className="btn-secondary"
                     onClick={() => setShowQuickAdd(false)}
                   >
                     Cancel
                   </button>
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     className="btn-primary"
                     disabled={!quickTitle.trim() || actionLoading === 'create'}
                   >
@@ -709,9 +715,9 @@ export default function Backlog() {
             <div className="modal detail-modal" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
                 <div className="header-left">
-                  <span 
+                  <span
                     className="state-badge"
-                    style={{ 
+                    style={{
                       color: STATES[selectedItem.state]?.color,
                       background: STATES[selectedItem.state]?.bg
                     }}
@@ -724,7 +730,7 @@ export default function Backlog() {
                   <X size={20} />
                 </button>
               </div>
-              
+
               {selectedItem.state !== 'promoted' ? (
                 <div className="edit-form">
                   <input
@@ -756,14 +762,14 @@ export default function Backlog() {
                   <p>{selectedItem.enriched_description || selectedItem.description}</p>
                   {selectedItem.hitl_session_id && (
                     <div className="hitl-actions">
-                      <button 
+                      <button
                         className="btn-primary"
                         onClick={() => navigate(`/design/${selectedItem.hitl_session_id}`)}
                       >
                         <ExternalLink size={16} />
                         Go to HITL Session
                       </button>
-                      <button 
+                      <button
                         className="btn-danger"
                         onClick={() => setShowUnpromoteConfirm(true)}
                       >
@@ -775,13 +781,13 @@ export default function Backlog() {
                 </div>
               )}
 
-              
+
 
               {/* Attachments Section */}
               <div className="backlog-attachments">
                 <div className="attachments-header">
                   <h4><Paperclip size={14} /> Attachments ({attachments.length})</h4>
-                  <button 
+                  <button
                     className="btn-icon"
                     onClick={() => setShowAttachmentModal(true)}
                     title="Add attachment"
@@ -789,7 +795,7 @@ export default function Backlog() {
                     <Plus size={16} />
                   </button>
                 </div>
-                
+
                 {attachments.length === 0 ? (
                   <p className="no-attachments">No attachments yet</p>
                 ) : (
@@ -797,9 +803,9 @@ export default function Backlog() {
                     {attachments.map(att => (
                       <li key={att.id} className={`attachment-item type-${att.attachment_type}`}>
                         <span className="attachment-icon">{getAttachmentIcon(att)}</span>
-                        <a 
-                          href={att.url} 
-                          target="_blank" 
+                        <a
+                          href={att.url}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="attachment-name"
                         >
@@ -813,7 +819,7 @@ export default function Backlog() {
                         {att.git_metadata && (
                           <span className="git-badge">{att.git_metadata.type}</span>
                         )}
-                        <button 
+                        <button
                           className="btn-icon delete"
                           onClick={() => handleDeleteAttachment(att.id)}
                           title="Remove"
@@ -828,7 +834,7 @@ export default function Backlog() {
 
               {selectedItem.state !== 'promoted' && (
                 <div className="modal-actions">
-                  <button 
+                  <button
                     className="btn-danger"
                     onClick={() => setShowDeleteConfirm(true)}
                   >
@@ -837,7 +843,7 @@ export default function Backlog() {
                   </button>
                   <div className="action-group">
                     {selectedItem.state === 'draft' && (
-                      <button 
+                      <button
                         className="btn-secondary"
                         onClick={() => handleStartChat(selectedItem)}
                         disabled={actionLoading}
@@ -849,7 +855,7 @@ export default function Backlog() {
                         )}
                       </button>
                     )}
-                    <button 
+                    <button
                       className="btn-primary"
                       onClick={handleUpdate}
                       disabled={actionLoading === 'update'}
@@ -881,7 +887,7 @@ export default function Backlog() {
                   <X size={20} />
                 </button>
               </div>
-              
+
               <div className="chat-container">
                 <div className="chat-history">
                   {chatHistory.length === 0 ? (
@@ -904,7 +910,7 @@ export default function Backlog() {
                   )}
                   <div ref={chatEndRef} />
                 </div>
-                
+
                 <div className="chat-input-area">
                   <textarea
                     className="chat-input"
@@ -920,7 +926,7 @@ export default function Backlog() {
                     disabled={chatLoading}
                     rows={4}
                   />
-                  <button 
+                  <button
                     className="send-btn"
                     onClick={handleSendMessage}
                     disabled={!chatInput.trim() || chatLoading}
@@ -929,9 +935,9 @@ export default function Backlog() {
                   </button>
                 </div>
               </div>
-              
+
               <div className="chat-actions">
-                <button 
+                <button
                   className="btn-danger"
                   onClick={() => setShowAbandonConfirm(true)}
                   disabled={actionLoading}
@@ -939,7 +945,7 @@ export default function Backlog() {
                   <X size={16} />
                   Abandon
                 </button>
-                <button 
+                <button
                   className="btn-success"
                   onClick={handleEndChat}
                   disabled={actionLoading || chatHistory.length < 2}
@@ -966,13 +972,13 @@ export default function Backlog() {
               <h3>Delete this idea?</h3>
               <p>This action cannot be undone. "{selectedItem.title}" will be permanently deleted.</p>
               <div className="modal-actions">
-                <button 
+                <button
                   className="btn-secondary"
                   onClick={() => setShowDeleteConfirm(false)}
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   className="btn-danger"
                   onClick={handleDelete}
                   disabled={actionLoading === 'delete'}
@@ -998,13 +1004,13 @@ export default function Backlog() {
               <h3>Abandon this chat session?</h3>
               <p>The item will return to draft state and chat history will be cleared.</p>
               <div className="modal-actions">
-                <button 
+                <button
                   className="btn-secondary"
                   onClick={() => setShowAbandonConfirm(false)}
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   className="btn-danger"
                   onClick={() => {
                     setShowAbandonConfirm(false);
@@ -1034,13 +1040,13 @@ export default function Backlog() {
               <h3>Abandon this HITL session?</h3>
               <p>The HITL session will be deleted and "{selectedItem.title}" will return to draft state.</p>
               <div className="modal-actions">
-                <button 
+                <button
                   className="btn-secondary"
                   onClick={() => setShowUnpromoteConfirm(false)}
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   className="btn-danger"
                   onClick={handleUnpromote}
                   disabled={actionLoading === 'unpromote'}
@@ -1066,21 +1072,21 @@ export default function Backlog() {
               <h3>Promote to HITL Session?</h3>
               <p>This will create a new Human-in-the-Loop design session from "{selectedItem.title}".</p>
               <label className="checkbox-label">
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   checked={skipClarification}
                   onChange={e => setSkipClarification(e.target.checked)}
                 />
                 Skip clarification phase
               </label>
               <div className="modal-actions">
-                <button 
+                <button
                   className="btn-secondary"
                   onClick={() => { setShowPromoteModal(false); setSkipClarification(false); }}
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   className="btn-primary"
                   onClick={handlePromote}
                   disabled={actionLoading === 'promote'}
@@ -1097,90 +1103,90 @@ export default function Backlog() {
         )}
 
 
-      {/* Attachment Modal */}
-      {showAttachmentModal && selectedItem && (
-        <div className="modal-overlay" onClick={() => setShowAttachmentModal(false)}>
-          <div className="modal attachment-modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Add Attachment</h3>
-              <button className="btn-icon" onClick={() => setShowAttachmentModal(false)}>
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="attachment-tabs">
-              <button 
-                className={attachmentTab === 'upload' ? 'active' : ''}
-                onClick={() => setAttachmentTab('upload')}
-              >
-                <Upload size={16} /> Upload File
-              </button>
-              <button 
-                className={attachmentTab === 'link' ? 'active' : ''}
-                onClick={() => setAttachmentTab('link')}
-              >
-                <Link2 size={16} /> Add Link
-              </button>
-            </div>
-            
-            <div className="attachment-content">
-              {attachmentTab === 'upload' ? (
-                <div className="upload-zone">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                    accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
-                    style={{ display: 'none' }}
-                  />
-                  <button 
-                    className="upload-btn"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Upload size={24} />
-                    <span>Choose file or drag & drop</span>
-                    <small>PDF, DOC, TXT, MD, PNG, JPG, GIF (max 10MB)</small>
-                  </button>
-                  {uploadProgress > 0 && (
-                    <div className="upload-progress">
-                      <div style={{ width: `${uploadProgress}%` }} />
+        {/* Attachment Modal */}
+        {showAttachmentModal && selectedItem && (
+          <div className="modal-overlay" onClick={() => setShowAttachmentModal(false)}>
+            <div className="modal attachment-modal" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>Add Attachment</h3>
+                <button className="btn-icon" onClick={() => setShowAttachmentModal(false)}>
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="attachment-tabs">
+                <button
+                  className={attachmentTab === 'upload' ? 'active' : ''}
+                  onClick={() => setAttachmentTab('upload')}
+                >
+                  <Upload size={16} /> Upload File
+                </button>
+                <button
+                  className={attachmentTab === 'link' ? 'active' : ''}
+                  onClick={() => setAttachmentTab('link')}
+                >
+                  <Link2 size={16} /> Add Link
+                </button>
+              </div>
+
+              <div className="attachment-content">
+                {attachmentTab === 'upload' ? (
+                  <div className="upload-zone">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      accept=".pdf,.doc,.docx,.txt,.md,.png,.jpg,.jpeg,.gif,.webp"
+                      style={{ display: 'none' }}
+                    />
+                    <button
+                      className="upload-btn"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Upload size={24} />
+                      <span>Choose file or drag & drop</span>
+                      <small>PDF, DOC, TXT, MD, PNG, JPG, GIF (max 10MB)</small>
+                    </button>
+                    {uploadProgress > 0 && (
+                      <div className="upload-progress">
+                        <div style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="link-form">
+                    <div className="form-group">
+                      <label>URL *</label>
+                      <input
+                        type="url"
+                        value={linkUrl}
+                        onChange={e => setLinkUrl(e.target.value)}
+                        placeholder="https://github.com/org/repo or any URL"
+                      />
+                      <small>GitHub, GitLab, Bitbucket links will be auto-detected</small>
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="link-form">
-                  <div className="form-group">
-                    <label>URL *</label>
-                    <input
-                      type="url"
-                      value={linkUrl}
-                      onChange={e => setLinkUrl(e.target.value)}
-                      placeholder="https://github.com/org/repo or any URL"
-                    />
-                    <small>GitHub, GitLab, Bitbucket links will be auto-detected</small>
+                    <div className="form-group">
+                      <label>Display Name (optional)</label>
+                      <input
+                        type="text"
+                        value={linkName}
+                        onChange={e => setLinkName(e.target.value)}
+                        placeholder="My Reference Repo"
+                      />
+                    </div>
+                    <button
+                      className="btn-primary"
+                      onClick={handleAddLink}
+                      disabled={!linkUrl.trim()}
+                    >
+                      Add Link
+                    </button>
                   </div>
-                  <div className="form-group">
-                    <label>Display Name (optional)</label>
-                    <input
-                      type="text"
-                      value={linkName}
-                      onChange={e => setLinkName(e.target.value)}
-                      placeholder="My Reference Repo"
-                    />
-                  </div>
-                  <button 
-                    className="btn-primary"
-                    onClick={handleAddLink}
-                    disabled={!linkUrl.trim()}
-                  >
-                    Add Link
-                  </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
       </main>
     </div>

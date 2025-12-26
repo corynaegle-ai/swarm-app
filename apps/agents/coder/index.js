@@ -106,7 +106,7 @@ function httpRequest(url, options = {}, body = null) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
     const client = urlObj.protocol === 'https:' ? https : http;
-    
+
     const opts = {
       hostname: urlObj.hostname,
       port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
@@ -114,7 +114,7 @@ function httpRequest(url, options = {}, body = null) {
       method: options.method || 'GET',
       headers: options.headers || {}
     };
-    
+
     const req = client.request(opts, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
@@ -126,13 +126,13 @@ function httpRequest(url, options = {}, body = null) {
         }
       });
     });
-    
+
     req.on('error', reject);
     req.setTimeout(30000, () => {
       req.destroy();
       reject(new Error('Request timeout'));
     });
-    
+
     if (body) {
       req.write(JSON.stringify(body));
     }
@@ -143,22 +143,22 @@ function httpRequest(url, options = {}, body = null) {
 
 // API helpers
 async function claimTicket(projectId = null) {
-  const url = projectId 
+  const url = projectId
     ? `${CONFIG.apiUrl}/claim?agent_id=${CONFIG.agentId}&project_id=${projectId}`
     : `${CONFIG.apiUrl}/claim?agent_id=${CONFIG.agentId}`;
-    
+
   const res = await httpRequest(url, { method: 'POST' });
-  
+
   if (res.status === 200 && res.data?.ticket) {
     return { ticket: res.data.ticket, projectSettings: res.data.project_settings || {} };
   }
   if (res.status === 204) return null;
-  
+
   throw new Error(`Claim failed: ${res.status} - ${JSON.stringify(res.data)}`);
 }
 
 async function sendHeartbeat(ticketId) {
-  await httpRequest(`${CONFIG.apiUrl}/tickets/${ticketId}/heartbeat`, { 
+  await httpRequest(`${CONFIG.apiUrl}/tickets/${ticketId}/heartbeat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   }, { agent_id: CONFIG.agentId });
@@ -181,9 +181,9 @@ async function completeTicket(ticketId, success, prUrl = null, error = null, cri
 // Claude API call with FORGE persona
 async function generateCode(ticket, heartbeatFn, projectSettings = {}, existingFiles = {}) {
   const prompt = buildPrompt(ticket, existingFiles);  // existingFiles passed from processTicket
-  
+
   const heartbeatTimer = setInterval(() => heartbeatFn(), CONFIG.heartbeatInterval);
-  
+
   try {
     const res = await httpRequest('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -198,11 +198,11 @@ async function generateCode(ticket, heartbeatFn, projectSettings = {}, existingF
       system: FORGE_PERSONA,
       messages: [{ role: 'user', content: prompt }]
     });
-    
+
     if (res.status !== 200) {
       throw new Error(`Claude API error: ${JSON.stringify(res.data)}`);
     }
-    
+
     const usage = { inputTokens: res.data.usage?.input_tokens || 0, outputTokens: res.data.usage?.output_tokens || 0 };
     const content = res.data.content?.[0]?.text || '';
     const parsed = parseForgeResponse(content, ticket);
@@ -215,9 +215,9 @@ async function generateCode(ticket, heartbeatFn, projectSettings = {}, existingF
 // Generate code with retry context (validation errors from previous attempt)
 async function generateCodeWithRetry(ticket, heartbeatFn, projectSettings, previousResult, validationErrors, existingFiles = {}) {
   const prompt = buildRetryPrompt(ticket, previousResult, validationErrors);
-  
+
   const heartbeatTimer = setInterval(() => heartbeatFn(), CONFIG.heartbeatInterval);
-  
+
   try {
     const res = await httpRequest('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -232,11 +232,11 @@ async function generateCodeWithRetry(ticket, heartbeatFn, projectSettings, previ
       system: FORGE_PERSONA,
       messages: [{ role: 'user', content: prompt }]
     });
-    
+
     if (res.status !== 200) {
       throw new Error(`Claude API error: ${JSON.stringify(res.data)}`);
     }
-    
+
     const usage = { inputTokens: res.data.usage?.input_tokens || 0, outputTokens: res.data.usage?.output_tokens || 0 };
     const content = res.data.content?.[0]?.text || '';
     const parsed = parseForgeResponse(content, ticket);
@@ -247,6 +247,45 @@ async function generateCodeWithRetry(ticket, heartbeatFn, projectSettings, previ
 }
 
 
+// Format sentinel feedback for injection into forge agent prompt
+function formatSentinelFeedback(ticket) {
+  if (!ticket.sentinel_feedback) return '';
+
+  let feedback = ticket.sentinel_feedback;
+  let classification = null;
+
+  try {
+    // Check if it's a JSON string with structured data
+    if (typeof feedback === 'string' && feedback.trim().startsWith('{')) {
+      const parsed = JSON.parse(feedback);
+      if (parsed.feedback) {
+        feedback = parsed.feedback;
+        classification = parsed.errorClassification;
+      }
+    }
+  } catch (e) {
+    // Use raw string if parse fails
+  }
+
+  let instructions = '';
+  if (classification) {
+    const { category } = classification;
+    if (category === 'syntax') instructions = 'CRITICAL: The previous code had syntax errors. Validate syntax strictly.';
+    if (category === 'verification') instructions = 'CRITICAL: The code failed verification. Review acceptance criteria and edge cases.';
+    if (category === 'timeout') instructions = 'CRITICAL: The code timed out. Optimize performance and check for infinite loops.';
+  }
+
+  return `
+## PREVIOUS SENTINEL FEEDBACK (MUST ADDRESS)
+The previous implementation was rejected by the Sentinel.
+${instructions ? `\n**Directives**: ${instructions}\n` : ''}
+**Feedback**:
+${feedback}
+
+You must analyze this feedback and correct the issues in your new implementation.
+`;
+}
+
 function buildPrompt(ticket, existingFiles = {}) {
   let criteria = [];
   if (ticket.acceptance_criteria) {
@@ -256,7 +295,7 @@ function buildPrompt(ticket, existingFiles = {}) {
       criteria = ticket.acceptance_criteria;
     }
   }
-  
+
   let fileHints = [];
   if (ticket.files_hint || ticket.file_hints) {
     const hints = ticket.files_hint || ticket.file_hints;
@@ -267,23 +306,23 @@ function buildPrompt(ticket, existingFiles = {}) {
     }
   }
 
-  const criteriaSection = criteria.length > 0 
+  const criteriaSection = criteria.length > 0
     ? criteria.map((c, i) => {
-        if (typeof c === 'object' && c.id) {
-          return `${i + 1}. [${c.id}] ${c.description}`;
-        }
-        return `${i + 1}. ${c}`;
-      }).join('\n')
+      if (typeof c === 'object' && c.id) {
+        return `${i + 1}. [${c.id}] ${c.description}`;
+      }
+      return `${i + 1}. ${c}`;
+    }).join('\n')
     : 'None specified - use your best judgment';
 
   // Parse files_to_create and files_to_modify from rag_context
   let filesToCreate = [];
   let filesToModify = [];
-  
+
   if (ticket.rag_context) {
     try {
-      const ctx = typeof ticket.rag_context === 'string' 
-        ? JSON.parse(ticket.rag_context) 
+      const ctx = typeof ticket.rag_context === 'string'
+        ? JSON.parse(ticket.rag_context)
         : ticket.rag_context;
       filesToCreate = ctx.files_to_create || [];
       filesToModify = ctx.files_to_modify || [];
@@ -291,26 +330,26 @@ function buildPrompt(ticket, existingFiles = {}) {
       log.warn('Failed to parse rag_context', { error: e.message });
     }
   }
-  
+
   // Fallback to fileHints if no specific files
   if (filesToCreate.length === 0 && filesToModify.length === 0) {
     filesToCreate = fileHints;
   }
-  
+
   // Build files section with CREATE vs MODIFY distinction
   let filesSection = '';
-  
+
   if (filesToCreate.length > 0) {
     filesSection += '**Files to CREATE (new files):**\n';
     filesSection += filesToCreate.map(f => '- ' + f).join('\n');
     filesSection += '\n\n';
   }
-  
+
   if (filesToModify.length > 0) {
     filesSection += '**Files to MODIFY (existing files - use surgical patches):**\n';
     filesSection += filesToModify.map(f => '- ' + f).join('\n');
     filesSection += '\n\n';
-    
+
     // Include existing file contents for context
     filesSection += '**Current content of files to modify:**\n\n';
     for (const fp of filesToModify) {
@@ -319,11 +358,11 @@ function buildPrompt(ticket, existingFiles = {}) {
       }
     }
   }
-  
+
   if (!filesSection) {
     filesSection = fileHints.length > 0 ? fileHints.join('\n') : 'Determine appropriate file structure';
   }
-  
+
   const hasModifications = filesToModify.length > 0;
 
   return `## Implementation Task
@@ -345,6 +384,8 @@ ${filesSection}
 ${ticket.repo_url ? `Repository: ${ticket.repo_url}` : 'Standalone implementation'}
 ${ticket.branch_name ? `Branch: ${ticket.branch_name}` : ''}
 
+${formatSentinelFeedback(ticket)}
+
 ---
 
 ## Your Task
@@ -359,31 +400,32 @@ ${ticket.branch_name ? `Branch: ${ticket.branch_name}` : ''}
 Respond with ONLY valid JSON in this exact format:
 
 \`\`\`json
-{
-  "files": [
-    {
-      "path": "relative/path/to/file.js",
-      "action": "create",  // Use "modify" with patches array for existing files
-      "content": "// file contents here"
-    }
-  ],
-  "tests": [
-    {
-      "path": "tests/file.test.js",
-      "content": "// test contents"
-    }
-  ],
-  "summary": "Brief description of implementation",
-  "acceptance_criteria_status": [
-    {
-      "id": "AC-001",
-      "criterion": "Description of the criterion",
-      "status": "SATISFIED",
-      "evidence": "Implemented in file.js:15-30"
-    }
-  ]
-}
-\`\`\`
+  {
+    "root_cause_analysis": "Explanation of why the previous attempt failed and how this fix addresses it",
+      "files": [
+        {
+          "path": "relative/path/to/file.js",
+          "action": "create",  // Use "modify" with patches array for existing files
+          "content": "// file contents here"
+        }
+      ],
+        "tests": [
+          {
+            "path": "tests/file.test.js",
+            "content": "// test contents"
+          }
+        ],
+          "summary": "Brief description of implementation",
+            "acceptance_criteria_status": [
+              {
+                "id": "AC-001",
+                "criterion": "Description of the criterion",
+                "status": "SATISFIED",
+                "evidence": "Implemented in file.js:15-30"
+              }
+            ]
+  }
+  \`\`\`
 
 ### For MODIFYING existing files, use this format instead:
 \`\`\`json
@@ -415,11 +457,11 @@ IMPORTANT:
 // Build retry prompt with validation errors
 function buildRetryPrompt(ticket, previousResult, validationErrors, existingFiles = {}) {
   const basePrompt = buildPrompt(ticket, existingFiles);
-  
-  const errorContext = codeValidator 
+
+  const errorContext = codeValidator
     ? codeValidator.formatErrorsForPrompt(validationErrors)
     : validationErrors.map(e => `- ${e.file}:${e.line}: ${e.message}`).join('\n');
-  
+
   return `## RETRY CONTEXT - PREVIOUS ATTEMPT FAILED VALIDATION
 
 Your previous code generation attempt had the following errors that must be fixed:
@@ -442,35 +484,36 @@ ${basePrompt}`;
 
 function parseForgeResponse(content, ticket) {
   let jsonStr = content;
-  
+
   const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (jsonMatch) {
     jsonStr = jsonMatch[1].trim();
   }
-  
+
   try {
     const parsed = JSON.parse(jsonStr);
-    
+
     if (!parsed.files || !Array.isArray(parsed.files)) {
       throw new Error('Response missing files array');
     }
-    
+
     const files = parsed.files.map(f => ({
       path: f.path,
       content: f.content,
       action: f.action || 'create'
     }));
-    
+
     if (parsed.tests && Array.isArray(parsed.tests)) {
       for (const test of parsed.tests) {
         files.push({ path: test.path, content: test.content, action: 'create' });
       }
     }
-    
+
     return {
       files,
       summary: parsed.summary || 'Implementation complete',
-      criteriaStatus: parsed.acceptance_criteria_status || []
+      criteriaStatus: parsed.acceptance_criteria_status || [],
+      rootCauseAnalysis: parsed.root_cause_analysis
     };
   } catch (err) {
     log.error('Failed to parse JSON response, falling back to file extraction', { error: err.message });
@@ -503,12 +546,12 @@ function execGit(cmd, cwd) {
 
 async function cloneAndBranch(ticket) {
   const repoDir = path.join(CONFIG.workDir, `repo-${ticket.id}`);
-  
+
   if (fs.existsSync(repoDir)) {
     fs.rmSync(repoDir, { recursive: true, force: true });
   }
   fs.mkdirSync(repoDir, { recursive: true });
-  
+
   let repoUrl = ticket.repo_url;
   if (repoUrl.startsWith('git@')) {
     const sshMatch = repoUrl.match(/git@([^:]+):(.+)/);
@@ -518,10 +561,22 @@ async function cloneAndBranch(ticket) {
   }
   repoUrl = repoUrl.replace('https://', `https://${CONFIG.githubToken}@`);
   execGit(`git clone ${repoUrl} .`, repoDir);
-  
-  const branchName = ticket.branch_name || `ticket-${ticket.id}`;
-  execGit(`git checkout -b ${branchName}`, repoDir);
-  
+
+  const branchName = ticket.branch_name || `forge/${ticket.id}-${Date.now()}`;
+
+  if (ticket.branch_name) {
+    try {
+      execGit(`git fetch origin ${branchName}`, repoDir);
+      execGit(`git checkout ${branchName}`, repoDir);
+      log.info('Checked out existing branch', { branch: branchName });
+    } catch (e) {
+      log.warn('Failed to checkout existing branch, creating new', { branch: branchName, error: e.message });
+      execGit(`git checkout -b ${branchName}`, repoDir);
+    }
+  } else {
+    execGit(`git checkout -b ${branchName}`, repoDir);
+  }
+
   return { repoDir, branchName };
 }
 
@@ -532,77 +587,77 @@ function fetchExistingFileContent(repoDir, filePath, maxLines = 300) {
   if (!fs.existsSync(fullPath)) {
     return null;
   }
-  
+
   const content = fs.readFileSync(fullPath, 'utf8');
   const lines = content.split('\n');
-  
+
   if (lines.length > maxLines) {
     const headLines = lines.slice(0, Math.floor(maxLines / 2));
     const tailLines = lines.slice(-Math.floor(maxLines / 2));
-    return headLines.join('\n') + 
-      '\n\n... [' + (lines.length - maxLines) + ' lines truncated] ...\n\n' + 
+    return headLines.join('\n') +
+      '\n\n... [' + (lines.length - maxLines) + ' lines truncated] ...\n\n' +
       tailLines.join('\n');
   }
-  
+
   return content;
 }
 
 function writeFiles(repoDir, files) {
   const written = [];
-  
+
   for (const file of files) {
     const filePath = path.join(repoDir, file.path);
     const fileDir = path.dirname(filePath);
-    
+
     if (!fs.existsSync(fileDir)) {
       fs.mkdirSync(fileDir, { recursive: true });
     }
-    
+
     if (file.action === 'modify' && file.patches && Array.isArray(file.patches)) {
       // SURGICAL MODIFICATION: Apply patches
       if (!fs.existsSync(filePath)) {
         log.error('Cannot modify non-existent file', { path: file.path });
         continue;
       }
-      
+
       let fileContent = fs.readFileSync(filePath, 'utf8');
       let patchesApplied = 0;
-      
+
       for (const patch of file.patches) {
         if (!patch.search || patch.replace === undefined) {
           log.warn('Invalid patch format', { path: file.path });
           continue;
         }
-        
+
         if (!fileContent.includes(patch.search)) {
-          log.warn('Patch search text not found', { 
-            path: file.path, 
+          log.warn('Patch search text not found', {
+            path: file.path,
             searchPreview: patch.search.substring(0, 50) + '...'
           });
           continue;
         }
-        
+
         const occurrences = fileContent.split(patch.search).length - 1;
         if (occurrences > 1) {
           log.warn('Patch search text not unique', { path: file.path, occurrences });
         }
-        
+
         fileContent = fileContent.replace(patch.search, patch.replace);
         patchesApplied++;
       }
-      
+
       if (patchesApplied > 0) {
         fs.writeFileSync(filePath, fileContent);
         written.push(file.path);
-        log.info('Applied patches to file', { 
-          path: file.path, 
+        log.info('Applied patches to file', {
+          path: file.path,
           patchesApplied,
           totalPatches: file.patches.length
         });
       } else {
         log.error('No patches applied to file', { path: file.path });
       }
-      
+
     } else {
       // CREATE: Write entire file content
       fs.writeFileSync(filePath, file.content);
@@ -610,17 +665,17 @@ function writeFiles(repoDir, files) {
       log.info('Wrote file', { path: file.path, bytes: file.content.length });
     }
   }
-  
+
   return written;
 }
 
 function commitAndPush(repoDir, ticket, branchName, summary) {
   execGit('git add -A', repoDir);
-  
+
   const message = `${ticket.id}: ${ticket.title}\n\n${summary}\n\nGenerated by Swarm Agent ${CONFIG.agentId} (FORGE)`;
   execGit(`git commit -m "${message.replace(/"/g, '\\"')}"`, repoDir);
   execGit(`git push -u origin ${branchName}`, repoDir);
-  
+
   const commitHash = execGit('git rev-parse --short HEAD', repoDir);
   log.info('Pushed commit', { commit: commitHash, branch: branchName });
   return commitHash;
@@ -633,20 +688,20 @@ async function createPullRequest(ticket, branchName, summary, criteriaStatus) {
     match = ticket.repo_url.match(/github\.com:([^\/]+)\/([^\/\.]+)/);
   }
   if (!match) throw new Error(`Invalid repo URL: ${ticket.repo_url}`);
-  
+
   const [, owner, repo] = match;
-  
+
   let criteriaSection = '';
   if (criteriaStatus && criteriaStatus.length > 0) {
-    criteriaSection = '\n\n## Acceptance Criteria Status\n\n' + 
+    criteriaSection = '\n\n## Acceptance Criteria Status\n\n' +
       criteriaStatus.map(c => {
         const emoji = c.status === 'SATISFIED' ? '✅' : c.status === 'PARTIALLY_SATISFIED' ? '⚠️' : '❌';
         return `${emoji} **${c.id || 'Criterion'}**: ${c.criterion || 'N/A'}\n   - Status: ${c.status}\n   - Evidence: ${c.evidence || 'N/A'}`;
       }).join('\n\n');
   }
-  
+
   const body = `## Ticket\n${ticket.id}\n\n## Description\n${ticket.description || 'Auto-generated'}\n\n## Summary\n${summary}${criteriaSection}\n\n---\n*Generated by Swarm Agent ${CONFIG.agentId} using FORGE persona*`;
-  
+
   const res = await httpRequest(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
     method: 'POST',
     headers: {
@@ -660,7 +715,7 @@ async function createPullRequest(ticket, branchName, summary, criteriaStatus) {
     base: 'main',
     body
   });
-  
+
   if (res.status === 201) {
     return res.data.html_url;
   }
@@ -675,29 +730,29 @@ function emitProgress(ticketId, data) {
 // Main ticket processing with retry logic
 async function processTicket(ticket, projectSettings = {}) {
   log.info('Processing ticket', { ticketId: ticket.id, title: ticket.title });
-  
+
   let repoDir = null;
   let branchName = null;
-  
+
   const executionStart = Date.now();
   const startedAt = new Date().toISOString();
   let inputTokens = 0, outputTokens = 0;
   const model = selectModel(ticket, projectSettings);
   const attemptHistory = [];
-  
+
   try {
     // SETUP PHASE - Run once before retry loop
     const cloneResult = await cloneAndBranch(ticket);
     repoDir = cloneResult.repoDir;
     branchName = cloneResult.branchName;
     log.info('Cloned repo', { branch: branchName });
-    
+
     // Fetch existing file content for files_to_modify
     const existingFiles = {};
     if (ticket.rag_context) {
       try {
-        const ctx = typeof ticket.rag_context === 'string' 
-          ? JSON.parse(ticket.rag_context) 
+        const ctx = typeof ticket.rag_context === 'string'
+          ? JSON.parse(ticket.rag_context)
           : ticket.rag_context;
         const filesToModify = ctx.files_to_modify || [];
         for (const filePath of filesToModify) {
@@ -713,46 +768,46 @@ async function processTicket(ticket, projectSettings = {}) {
         log.warn('Failed to fetch existing files', { error: e.message });
       }
     }
-    
+
     // RETRY LOOP
     const maxAttempts = RETRY_CONFIG.maxInternalAttempts;
     let lastResult = null;
     let lastValidationErrors = [];
     let currentAttempt = 0;
-    
+
     while (currentAttempt < maxAttempts) {
       currentAttempt++;
       const attemptStart = Date.now();
-      
+
       log.info('Starting generation attempt', { ticketId: ticket.id, attempt: currentAttempt, maxAttempts });
       emitProgress(ticket.id, { type: 'forge_attempt', attempt: currentAttempt, maxAttempts, status: currentAttempt === 1 ? 'generating' : 'retrying' });
-      
+
       try {
         const heartbeatFn = () => sendHeartbeat(ticket.id).catch(e => log.error('Heartbeat failed', { error: e.message }));
-        
+
         let result;
         if (currentAttempt === 1) {
           result = await generateCode(ticket, heartbeatFn, projectSettings, existingFiles);
         } else {
           result = await generateCodeWithRetry(ticket, heartbeatFn, projectSettings, lastResult, lastValidationErrors, existingFiles);
         }
-        
+
         inputTokens += result.usage?.inputTokens || 0;
         outputTokens += result.usage?.outputTokens || 0;
         lastResult = result;
-        
+
         if (!result.files || result.files.length === 0) {
           throw new Error('No files generated by FORGE');
         }
         log.info('Generated files', { count: result.files.length, files: result.files.map(f => f.path) });
-        
+
         // Check for BLOCKED criteria (non-retryable)
         const blockedCriteria = result.criteriaStatus?.filter(c => c.status === 'BLOCKED') || [];
         if (blockedCriteria.length > 0) {
           log.error('BLOCKED criteria detected', { blocked: blockedCriteria });
           throw new Error(`Implementation blocked: ${blockedCriteria.map(c => c.criterion).join(', ')}`);
         }
-        
+
         // Reset git state before writing (clean any previous attempt)
         if (currentAttempt > 1) {
           try {
@@ -762,15 +817,15 @@ async function processTicket(ticket, projectSettings = {}) {
             log.warn('Git reset failed', { error: gitErr.message });
           }
         }
-        
+
         const filesWritten = writeFiles(repoDir, result.files);
         emitProgress(ticket.id, { type: 'forge_attempt', attempt: currentAttempt, maxAttempts, status: 'validating' });
-        
+
         // VALIDATION PHASE
         if (codeValidator) {
           const validationLevel = projectSettings?.validationLevel || RETRY_CONFIG.defaultValidationLevel;
           log.info('Running validation', { level: validationLevel, attempt: currentAttempt });
-          
+
           const validation = await codeValidator.validateAll(repoDir, result.files, validationLevel);
           attemptHistory.push({
             attempt: currentAttempt,
@@ -778,12 +833,12 @@ async function processTicket(ticket, projectSettings = {}) {
             errors: validation.errors,
             tokens: { input: result.usage?.inputTokens, output: result.usage?.outputTokens }
           });
-          
+
           if (!validation.passed) {
             log.warn('Validation failed', { attempt: currentAttempt, errorCount: validation.errors.length, errors: validation.errors.slice(0, 5) });
             lastValidationErrors = validation.errors;
             emitProgress(ticket.id, { type: 'forge_attempt', attempt: currentAttempt, maxAttempts, status: 'failed', errorCount: validation.errors.length });
-            
+
             if (currentAttempt < maxAttempts) continue;
             throw new Error(`Validation failed after ${maxAttempts} attempts: ` + validation.errors.slice(0, 3).map(e => `${e.file}:${e.line}: ${e.message}`).join('; '));
           }
@@ -791,14 +846,14 @@ async function processTicket(ticket, projectSettings = {}) {
         } else {
           attemptHistory.push({ attempt: currentAttempt, durationMs: Date.now() - attemptStart, errors: [], tokens: { input: result.usage?.inputTokens, output: result.usage?.outputTokens } });
         }
-        
+
         emitProgress(ticket.id, { type: 'forge_attempt', attempt: currentAttempt, maxAttempts, status: 'passed' });
-        
+
         // SUCCESS - Commit, Push, PR
         commitAndPush(repoDir, ticket, branchName, result.summary);
         const prUrl = await createPullRequest(ticket, branchName, result.summary, result.criteriaStatus);
         log.info('Created PR', { url: prUrl });
-        
+
         await completeTicket(ticket.id, true, prUrl, null, result.criteriaStatus, filesWritten);
         log.info('Ticket completed successfully', { ticketId: ticket.id, prUrl, attempts: currentAttempt });
 
@@ -807,18 +862,18 @@ async function processTicket(ticket, projectSettings = {}) {
             agentLearning.logExecution({ taskId: ticket.id, agentId: CONFIG.agentId, model, inputTokens, outputTokens, startedAt, completedAt: new Date().toISOString(), durationMs: Date.now() - executionStart, outcome: 'success', prUrl, filesChanged: filesWritten, criteriaStatus: result.criteriaStatus, attempts: currentAttempt, attemptHistory });
           } catch (logErr) { log.warn('Failed to log execution', { error: logErr.message }); }
         }
-        
+
         return { success: true, prUrl, filesWritten, attempts: currentAttempt, attemptHistory };
-        
+
       } catch (attemptErr) {
         const isApiError = attemptErr.message?.includes('API error');
         const isNetworkError = attemptErr.message?.includes('ECONNREFUSED') || attemptErr.message?.includes('ETIMEDOUT');
         const isBlockedError = attemptErr.message?.includes('blocked');
-        
+
         if (isApiError || isNetworkError || isBlockedError) throw attemptErr;
-        
+
         attemptHistory.push({ attempt: currentAttempt, durationMs: Date.now() - attemptStart, errors: [{ type: 'exception', message: attemptErr.message }], tokens: { input: lastResult?.usage?.inputTokens, output: lastResult?.usage?.outputTokens } });
-        
+
         if (currentAttempt < maxAttempts && !isBlockedError) {
           log.warn('Attempt failed, will retry', { attempt: currentAttempt, error: attemptErr.message });
           lastValidationErrors = [{ type: 'exception', file: 'unknown', line: 1, message: attemptErr.message }];
@@ -828,7 +883,7 @@ async function processTicket(ticket, projectSettings = {}) {
       }
     }
     throw new Error('Retry loop exited unexpectedly');
-    
+
   } catch (err) {
     log.error('Ticket processing failed', { ticketId: ticket.id, error: err.message, attempts: attemptHistory.length, stack: err.stack });
     const errorType = err.message?.includes('Validation failed') ? 'validation_exhausted' : err.message?.includes('API error') ? 'api_error' : err.message?.includes('git') || err.message?.includes('push') ? 'git_error' : 'unknown';
@@ -836,10 +891,10 @@ async function processTicket(ticket, projectSettings = {}) {
     if (agentLearning) {
       try { agentLearning.logExecutionWithError({ taskId: ticket.id, agentId: CONFIG.agentId, model, inputTokens, outputTokens, startedAt, durationMs: Date.now() - executionStart, outcome: 'failure', errorMessage: err.message, errorType, attempts: attemptHistory.length, attemptHistory }); } catch (logErr) { log.warn('Failed to log execution error', { error: logErr.message }); }
     }
-    
+
     try { await completeTicket(ticket.id, false, null, err.message, null, []); } catch (completeErr) { log.error('Failed to complete ticket', { error: completeErr.message }); }
-    if (repoDir && fs.existsSync(repoDir)) { try { fs.rmSync(repoDir, { recursive: true, force: true }); } catch {} }
-    
+    if (repoDir && fs.existsSync(repoDir)) { try { fs.rmSync(repoDir, { recursive: true, force: true }); } catch { } }
+
     return { success: false, error: err.message, errorType, validationErrors: attemptHistory.flatMap(a => a.errors || []), attempts: attemptHistory.length, attemptHistory };
   }
 }
@@ -857,29 +912,29 @@ async function main() {
     log.error('GITHUB_TOKEN not set');
     process.exit(1);
   }
-  
+
   if (!fs.existsSync(CONFIG.workDir)) {
     fs.mkdirSync(CONFIG.workDir, { recursive: true });
   }
-  
-  log.info('Agent starting', { 
-    agentId: CONFIG.agentId, 
+
+  log.info('Agent starting', {
+    agentId: CONFIG.agentId,
     apiUrl: CONFIG.apiUrl,
     pollInterval: CONFIG.pollInterval,
     personaLoaded: FORGE_PERSONA.length > 100,
     retryEnabled: !!codeValidator,
     maxRetries: RETRY_CONFIG.maxInternalAttempts
   });
-  
+
   const projectId = process.argv[2] || null;
   if (projectId) {
     log.info('Filtering to project', { projectId });
   }
-  
+
   while (running) {
     try {
       const claimResult = await claimTicket(projectId);
-      
+
       if (claimResult) {
         const { ticket, projectSettings } = claimResult;
         await processTicket(ticket, projectSettings);
@@ -893,14 +948,14 @@ async function main() {
       await new Promise(r => setTimeout(r, CONFIG.pollInterval));
     }
   }
-  
+
   log.info('Agent shutdown complete');
 }
 
 function shutdown(signal) {
   log.info('Shutdown signal received', { signal });
   running = false;
-  if (agentLearning) { try { agentLearning.close(); } catch {} }
+  if (agentLearning) { try { agentLearning.close(); } catch { } }
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));

@@ -18,7 +18,7 @@ export function useTickets() {
       if (projectId) params.append('project_id', projectId);
       params.append('limit', limit);
       params.append('offset', offset);
-      
+
       const res = await fetch(`${API_BASE}/api/tickets?${params}`, { credentials: 'include' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to fetch tickets');
@@ -124,6 +124,64 @@ export function useTickets() {
     }
   }, []);
 
+  const patchTicket = useCallback(async (id, updates) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/tickets/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(updates)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to patch ticket');
+      return data;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const requeueTicket = useCallback(async (id, reason) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/tickets/${id}/requeue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ reason })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to requeue ticket');
+      return data;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const getTicketWithDetails = useCallback(async (id) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/tickets/${id}?include=dependencies,events`, { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to fetch ticket details');
+      return data;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const getProjects = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/projects`, { credentials: 'include' });
@@ -143,6 +201,9 @@ export function useTickets() {
     createTicket,
     updateTicket,
     deleteTicket,
+    patchTicket,
+    requeueTicket,
+    getTicketWithDetails,
     getProjects,
     loading,
     error

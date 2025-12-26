@@ -143,11 +143,17 @@ function httpRequest(url, options = {}, body = null) {
 
 // API helpers
 async function claimTicket(projectId = null) {
-  const url = projectId
-    ? `${CONFIG.apiUrl}/claim?agent_id=${CONFIG.agentId}&project_id=${projectId}`
-    : `${CONFIG.apiUrl}/claim?agent_id=${CONFIG.agentId}`;
+  const url = `${CONFIG.apiUrl}/claim`;
+  const body = {
+    agent_id: CONFIG.agentId,
+    project_id: projectId,
+    ticket_filter: 'ready'
+  };
 
-  const res = await httpRequest(url, { method: 'POST' });
+  const res = await httpRequest(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  }, body);
 
   if (res.status === 200 && res.data?.ticket) {
     return { ticket: res.data.ticket, projectSettings: res.data.project_settings || {} };

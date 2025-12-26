@@ -4,6 +4,31 @@
 
 ---
 
+## Session: December 26, 2024 - Orchestrator Ticket Assignment Debugging
+
+### Status: ✅ COMPLETED
+
+---
+
+## Fix Summary
+
+### 1. Orchestrator Ticket Assignment Stuck
+**Problem**: Ticket `TKT-E2E-IMPL-001` was stuck in `ready` state despite being assigned to `forge-agent-001`.
+**Root Cause**:
+1.  **Process Missing**: `forge-agent-001` process was not running on the Dev Server.
+2.  **API Error**: Agent failed with `400 Bad Request` on `/claim` because it sent parameters in query string instead of body.
+**Solution**:
+- Patched `apps/agents/coder/index.js` to send `agent_id` in request body.
+- Deployed fix to Dev Server.
+- Manually verified agent claimed the ticket.
+
+### 2. Fix Ticket Requeue Button
+**Problem**: Frontend "Requeue" button clicked but did nothing.
+**Root Cause**: Missing API hooks in `useTickets.js` (`requeueTicket`, `patchTicket`, `getTicketWithDetails`).
+**Solution**: Implemented missing functions in `apps/dashboard/src/hooks/useTickets.js` to wire up UI to Backend.
+
+---
+
 ## Session: December 26, 2024 - Ticket History Logging & RAG Workflow
 
 ### Status: ✅ COMPLETED

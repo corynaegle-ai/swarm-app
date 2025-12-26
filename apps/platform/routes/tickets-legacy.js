@@ -2,6 +2,7 @@
  * Legacy ticket routes for agent communication - PostgreSQL version
  * Mounted at root level: /claim, /complete, /heartbeat, etc.
  * Migrated: 2025-12-17 - From SQLite to async PostgreSQL
+ * Updated: 2025-12-26 - Added agent_id validation against agent_definitions
  */
 
 const express = require('express');
@@ -21,13 +22,76 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// GET /agents/available - List valid agent IDs (no auth - for agent discovery)
+router.get('/agents/available', async (req, res) => {
+  try {
+    const { type, runtime } = req.query;
+    
+    let sql = `
+      SELECT id, name, version, runtime, description, 
+             capabilities, timeout_seconds
+      FROM agent_definitions
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramIndex = 1;
+    
+    if (runtime) {
+      sql += ` AND runtime = $${paramIndex++}`;
+      params.push(runtime);
+    }
+    
+    sql += ` ORDER BY name, version DESC`;
+    
+    const agents = await queryAll(sql, params);
+    
+    res.json({ 
+      agents: agents.map(a => ({
+        id: a.id,
+        name: a.name,
+        version: a.version,
+        runtime: a.runtime,
+        description: a.description,
+        capabilities: a.capabilities,
+        timeout_seconds: a.timeout_seconds
+      })),
+      count: agents.length
+    });
+  } catch (err) {
+    console.error('GET /agents/available error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/claim', async (req, res) => {
   try {
     const { agent_id, vm_id, project_id, ticket_filter } = req.body || {};
     if (!agent_id) return res.status(400).json({ error: 'agent_id required' });
 
+    // Validate agent_id exists in agent_definitions
+    const agentDef = await queryOne(`
+      SELECT id, name, version FROM agent_definitions 
+      WHERE id = $1 OR name = $1
+    `, [agent_id]);
+    
+    if (!agentDef) {
+      console.warn(`[claim] Invalid agent_id: ${agent_id} - not found in agent_definitions`);
+      return res.status(400).json({ 
+        error: 'Invalid agent_id - not registered in agent_definitions',
+        hint: 'Use GET /agents/available to list valid agent IDs'
+      });
+    }
+    
+    // Use the canonical agent ID from the definition
+    const canonicalAgentId = agentDef.id;
+
     // Determine which state to filter on
-    const targetState = ticket_filter === 'in_review' ? 'in_review' : 'ready';
+    // Agent routing by state convention:
+    // - Forge agents: ticket_filter = 'ready' (default)
+    // - Sentinel agents: ticket_filter = 'in_review'
+    // - Deploy agents: ticket_filter = 'approved'
+    const validFilters = ['ready', 'in_review', 'approved'];
+    const targetState = validFilters.includes(ticket_filter) ? ticket_filter : 'ready';
 
     // Find claimable ticket with project info INCLUDING mcp_servers
     let sql, params;
@@ -79,7 +143,9 @@ router.post('/claim', async (req, res) => {
       ticketId: ticket.id,
       fromState: ticket.state,
       toState: 'assigned',
-      agent_id,
+      agent_id: canonicalAgentId,
+      agent_name: agentDef.name,
+      agent_version: agentDef.version,
       ticket_filter: ticket_filter || 'ready',
       timestamp: new Date().toISOString()
     });
@@ -120,88 +186,27 @@ router.post('/claim', async (req, res) => {
           lease_expires = NOW() + INTERVAL '${leaseMinutes} minutes',
           last_heartbeat = NOW()
       WHERE id = $3
-    `, [agent_id, vm_id || null, ticket.id]);
+    `, [canonicalAgentId, vm_id || null, ticket.id]);
     
     res.json({ 
       ticket: { 
         ...ticket, 
         state: 'assigned', 
-        assignee_id: agent_id,
+        assignee_id: canonicalAgentId,
         mcp_servers: effectiveMcpServers,
         user_id: ticket.tenant_id || 'default'
       },
       project,
       projectSettings,
+      agent: {
+        id: agentDef.id,
+        name: agentDef.name,
+        version: agentDef.version
+      },
       lease_minutes: leaseMinutes
     });
   } catch (err) {
     console.error('POST /claim error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST /heartbeat - Agent heartbeat to extend lease
-router.post('/heartbeat', async (req, res) => {
-  try {
-    const { agent_id, ticket_id, progress, status_message } = req.body || {};
-    if (!agent_id || !ticket_id) {
-      return res.status(400).json({ error: 'agent_id and ticket_id required' });
-    }
-
-    // Extend lease and update heartbeat
-    const leaseMinutes = 30;
-    const logEntry = status_message ? `[${new Date().toISOString()}] ${status_message}\n` : '';
-    
-    const result = await execute(`
-      UPDATE tickets 
-      SET last_heartbeat = NOW(),
-          lease_expires = NOW() + INTERVAL '${leaseMinutes} minutes',
-          progress_log = COALESCE(progress_log, '') || $1
-      WHERE id = $2 AND assignee_id = $3
-    `, [logEntry, ticket_id, agent_id]);
-    
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Ticket not found or not assigned to this agent' });
-    }
-    
-    res.json({ success: true, lease_extended: leaseMinutes });
-  } catch (err) {
-    console.error('POST /heartbeat error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST /start - Agent starts working on assigned ticket
-router.post('/start', async (req, res) => {
-  try {
-    const { ticket_id, agent_id, branch_name } = req.body || {};
-    if (!ticket_id) return res.status(400).json({ error: 'ticket_id required' });
-
-    // Log state transition: assigned → in_progress
-    console.log('[state transition] /start:', {
-      ticketId: ticket_id,
-      fromState: 'assigned',
-      toState: 'in_progress',
-      agent_id,
-      branch_name,
-      timestamp: new Date().toISOString()
-    });
-
-    const result = await execute(`
-      UPDATE tickets 
-      SET state = 'in_progress', 
-          started_at = NOW(),
-          branch_name = $1
-      WHERE id = $2 AND (assignee_id = $3 OR assignee_id IS NULL)
-    `, [branch_name || null, ticket_id, agent_id]);
-    
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Ticket not found or not assigned to this agent' });
-    }
-    
-    res.json({ success: true, state: 'in_progress' });
-  } catch (err) {
-    console.error('POST /start error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

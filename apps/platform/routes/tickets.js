@@ -426,7 +426,11 @@ router.put('/:id', requireAuth, requireTenant, requirePermission('manage_tickets
             currentRetryCount + 1,
             retryAfter,
             `Retry #${currentRetryCount + 1}: ${errorMsg}`,
-            { message: req.body.sentinel_feedback || errorMsg, error: errorMsg }, // Store as JSON object
+            {
+              message: req.body.sentinel_feedback || errorMsg,
+              error: errorMsg,
+              errorClassification: retryDecision.classification
+            },
             req.params.id
           ]);
 
@@ -590,7 +594,11 @@ router.post('/:id/verify', requireAuth, requireTenant, requirePermission('manage
             currentRetryCount + 1,
             retryAfter,
             `Verification Retry #${currentRetryCount + 1}: ${reason}`,
-            { message: reason, context: 'verification_failure' }, // Use reason as sentinel_feedback (JSON)
+            {
+              message: reason,
+              context: 'verification_failure',
+              errorClassification: retryDecision.classification
+            },
             now,
             id
           ]);
@@ -837,37 +845,37 @@ function requireAgentAuth(req, res, next) {
 router.post('/:id/activity', requireAgentAuth, async (req, res) => {
   const { id } = req.params;
   const { agent_id, category, message, metadata = {} } = req.body;
-  
+
   // Validate required fields
   if (!agent_id || !category || !message) {
     return res.status(400).json({ error: 'agent_id, category, message required' });
   }
-  
+
   try {
     // Verify ticket exists and get tenant_id for broadcast
     const ticket = await queryOne('SELECT id, state, tenant_id FROM tickets WHERE id = $1', [id]);
     if (!ticket) {
       return res.status(404).json({ error: 'Ticket not found' });
     }
-    
+
     // Map agent_id prefix to valid actor_type (per DB constraint)
     const agentPrefix = agent_id.split('-')[0].toLowerCase();
     const actorTypeMap = {
       'design': 'design_agent',
-      'worker': 'worker_agent', 
+      'worker': 'worker_agent',
       'forge': 'worker_agent',
       'review': 'review_agent',
       'orchestrator': 'orchestrator',
       'system': 'system'
     };
     const actorType = actorTypeMap[agentPrefix] || 'worker_agent';
-    
+
     // Insert activity into ticket_events
     await execute(`
       INSERT INTO ticket_events (ticket_id, event_type, actor_id, actor_type, new_value, metadata)
       VALUES ($1, $2, $3, $4, $5, $6)
     `, [id, category, agent_id, actorType, message, JSON.stringify(metadata)]);
-    
+
     // Broadcast via WebSocket for real-time UI updates
     broadcast.toTenant(ticket.tenant_id, 'ticket:activity', {
       ticket_id: id,
@@ -879,7 +887,7 @@ router.post('/:id/activity', requireAgentAuth, async (req, res) => {
         metadata
       }
     });
-    
+
     res.json({ success: true });
   } catch (err) {
     console.error('POST /tickets/:id/activity error:', err);
@@ -893,17 +901,17 @@ router.get('/:id/activity', requireAuth, requireTenant, requirePermission('view_
   const tenantId = req.tenantId;
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const offset = parseInt(req.query.offset) || 0;
-  
+
   try {
     // Verify ticket exists and belongs to tenant
     const ticket = await queryOne(
-      'SELECT id FROM tickets WHERE id = $1 AND tenant_id = $2', 
+      'SELECT id FROM tickets WHERE id = $1 AND tenant_id = $2',
       [id, tenantId]
     );
     if (!ticket) {
       return res.status(404).json({ error: 'Ticket not found' });
     }
-    
+
     // Get activity events
     const events = await queryAll(`
       SELECT event_type as category, actor_id, actor_type, 
@@ -913,7 +921,7 @@ router.get('/:id/activity', requireAuth, requireTenant, requirePermission('view_
       ORDER BY created_at DESC 
       LIMIT $2 OFFSET $3
     `, [id, limit, offset]);
-    
+
     // Format response
     const activity = events.map(e => ({
       timestamp: e.timestamp,
@@ -922,7 +930,7 @@ router.get('/:id/activity', requireAuth, requireTenant, requirePermission('view_
       message: e.message,
       metadata: typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata
     }));
-    
+
     res.json({ ticket_id: id, activity, limit, offset });
   } catch (err) {
     console.error('GET /tickets/:id/activity error:', err);

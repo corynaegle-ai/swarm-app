@@ -172,6 +172,7 @@ ${formatAcceptanceCriteria(ticket.acceptance_criteria)}
 Return a JSON object:
 \`\`\`json
 {
+  "root_cause_analysis": "MANDATORY: Explain why the previous attempt failed (if applicable) and how this code fixes it.",
   "files": [
     {
       "path": "relative/path/to/file.js",
@@ -235,6 +236,33 @@ function formatSentinelFeedback(ticket) {
     issueCount: feedbackItems.length
   });
 
+  /* DYNAMIC INSTRUCTION TUNING */
+  let specificInstructions = '';
+  const errorType = feedback.errorClassification?.category || 'unknown';
+
+  if (errorType === 'syntax') {
+    specificInstructions = `
+    FAILED DUE TO SYNTAX ERRORS.
+    - You must write VALID JavaScript/Node.js code.
+    - Do NOT use pseudo-code or placeholders.
+    - Run a mental linter on your code before outputting.
+    `;
+  } else if (errorType === 'verification') {
+    specificInstructions = `
+    FAILED VERIFICATION TESTS.
+    - Your code implementation did NOT meet the acceptance criteria.
+    - Review the "Acceptance Criteria" section again.
+    - Ensure you are handling edge cases.
+    `;
+  } else if (errorType === 'timeout') {
+    specificInstructions = `
+    FAILED DUE TO TIMEOUT.
+    - Your solution is too slow or causing an infinite loop.
+    - Optimize database queries (add indexes if needed).
+    - Avoid synchronous operations on large datasets.
+    `;
+  }
+
   return `
 
 ## ⚠️ PREVIOUS ATTEMPT REJECTED - MUST FIX THESE ISSUES
@@ -242,18 +270,14 @@ function formatSentinelFeedback(ticket) {
 Your previous implementation was rejected by the code review sentinel.
 This is attempt ${attempt} of ${maxAttempts}.
 
-**You MUST address ALL of the following issues:**
-
+**Issues to Fix:**
 ${feedbackItems.map((item, i) => `${i + 1}. ${item}`).join('\n')}
 
-**CRITICAL REQUIREMENTS**:
-- Do NOT repeat the same mistakes
-- Address each issue explicitly in your implementation
-- Add inline comments showing how you fixed each issue
-- If an issue mentions missing validation → ADD validation
-- If an issue mentions security → ADD security measures
-- If an issue mentions error handling → ADD proper error handling
-- If an issue mentions accessibility → ADD ARIA attributes
+**Specific Instructions:**
+${specificInstructions}
+
+**MANDATORY REQUIREMENT:**
+You MUST include a "root_cause_analysis" field in your JSON response explaining WHY the previous attempt failed and HOW you are fixing it.
 
 **FAILURE TO ADDRESS THESE ISSUES WILL RESULT IN REJECTION.**
 `;

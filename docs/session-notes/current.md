@@ -1,3 +1,41 @@
+## Infrastructure & Access
+- **Dev Server SSH**: `ssh -i ~/.ssh/swarm_key root@134.199.235.140`
+- **Postgres Password**: `swarm_dev_2024`
+
+---
+
+## Session: December 26, 2024 - Ticket History Logging & RAG Workflow
+
+### Status: ✅ COMPLETED
+
+---
+
+## Fix Summary
+
+### 1. Ticket History Logging
+**Problem**: Agents were not logging their activities (file changes, git operations, etc.) to the ticket history.
+**Root Cause**: `forge-agent-v4.js` was missing calls to `activity-logger` for non-AI events.
+**Solution**:
+- Added calls to `activity.logTicketClaimed`, `activity.logGitOperation`, `activity.logFileCreated/Modified`, and `activity.logPrCreated` in `forge-agent-v4.js`.
+- Verified changes with syntax check and code review.
+
+### 2. RAG Workflow
+**Problem**: Need a standardized way to query RAG for code snippets.
+**Solution**:
+- Created `scripts/rag-search.sh` to tunnel queries via SSH to the dev server.
+- Documented workflow in `.agent/workflows/rag-query.md`.
+
+---
+
+## Commands Reference
+
+```bash
+# Query RAG
+./scripts/rag-search.sh "query string"
+```
+
+---
+
 ## Session: December 26, 2024 - Forge-Sentinel Feedback Loop Fix
 
 ### Status: ✅ COMPLETED

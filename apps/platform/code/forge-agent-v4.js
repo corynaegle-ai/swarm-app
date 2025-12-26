@@ -300,11 +300,15 @@ async function processTicket(ticket, projectSettings = {}, deps = {}) {
 
   try {
     log.info('Processing ticket', { id: ticket.id, title: ticket.title, model });
+    await activity.logTicketClaimed(ticket.id, ticket.title);
 
     // Step 1: Clone repo
     repoDir = path.join(CONFIG.workDir, `repo-${ticket.id}-${Date.now()}`);
     cloneRepo(ticket.repo_url, repoDir);
+    await activity.logGitOperation(ticket.id, 'clone', { repo_url: ticket.repo_url });
+
     createBranch(repoDir, branchName);
+    await activity.logGitOperation(ticket.id, 'checkout', { branch: branchName });
 
     // Step 2: Get existing file list for context
     const existingFiles = getRepoFileList(repoDir);
@@ -320,6 +324,7 @@ async function processTicket(ticket, projectSettings = {}, deps = {}) {
     }
 
     // Step 5: Build prompt and call Claude
+    await activity.logCodeGenerationStart(ticket.id, model);
     const prompt = buildImplementationPrompt(ticket, enrichedRagContext, existingFiles);
     const response = await callClaude([{ role: 'user', content: prompt }], model, ticket.id);
     const result = parseCodeResponse(response);
@@ -334,10 +339,18 @@ async function processTicket(ticket, projectSettings = {}, deps = {}) {
       creations: result.files.filter(f => f.action === 'create').length
     });
 
+    await activity.logCodeGenerationComplete(ticket.id, result.files.length, Date.now() - startTime);
+
     // Step 6: Write, commit, push, create PR
-    const filesWritten = writeFiles(repoDir, result.files);
+    const filesWritten = await writeFiles(repoDir, result.files, ticket.id, activity);
     commitAndPush(repoDir, ticket, branchName, result.summary || 'Implementation');
+    await activity.logGitOperation(ticket.id, 'commit_push', {
+      message: result.summary || 'Implementation',
+      branch: branchName
+    });
+
     const prUrl = await createPullRequest(ticket, branchName, result.summary || 'Implementation');
+    await activity.logPrCreated(ticket.id, prUrl, filesWritten.length);
 
     log.info('Ticket completed', { id: ticket.id, prUrl, files: filesWritten.length });
 
@@ -375,6 +388,8 @@ async function processTicket(ticket, projectSettings = {}, deps = {}) {
       errorSubcategory: classification.subcategory,
       durationMs
     });
+
+    await activity.logError(ticket.id, err.message, classification.category);
 
     // Determine error type for better reporting
     let errorType = 'runtime';
@@ -482,7 +497,7 @@ function createBranch(repoDir, branchName) {
   }
 }
 
-function writeFiles(repoDir, files) {
+async function writeFiles(repoDir, files, ticketId, activity) {
   const written = [];
 
   for (const file of files) {
@@ -490,10 +505,23 @@ function writeFiles(repoDir, files) {
     const dir = path.dirname(fullPath);
 
     fs.mkdirSync(dir, { recursive: true });
+
+    // Check if file exists to determine action type for logging if not explicitly set
+    const isModification = fs.existsSync(fullPath);
+    const action = file.action || (isModification ? 'modify' : 'create');
+
     fs.writeFileSync(fullPath, file.content);
     written.push(file.path);
 
-    log.debug('Wrote file', { path: file.path, action: file.action || 'create' });
+    log.debug('Wrote file', { path: file.path, action });
+
+    if (activity && ticketId) {
+      if (action === 'modify') {
+        await activity.logFileModified(ticketId, file.path);
+      } else {
+        await activity.logFileCreated(ticketId, file.path);
+      }
+    }
   }
 
   return written;

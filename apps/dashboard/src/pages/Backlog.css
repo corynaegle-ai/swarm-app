@@ -553,7 +553,7 @@
 
 
 /* Chat Modal */
-.chat-modal {
+.modal.chat-modal {
   width: 100%;
   max-width: 1050px;
   height: 80vh;

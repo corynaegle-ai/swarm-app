@@ -288,12 +288,14 @@ You MUST include a "root_cause_analysis" field in your JSON response explaining 
 /**
  * Process a ticket - main entry point
  */
-async function processTicket(ticket, projectSettings = {}) {
-  console.log('[FORGE] Processing ticket - processTicket() invoked', { ticketId: ticket?.id, title: ticket?.title });
+async function processTicket(ticket, projectSettings = {}, deps = {}) {
+  const { execute } = deps.db || require('../db.js');
+  const activity = deps.activity || require('../lib/activity-logger.js');
+  const agentLearning = deps.agentLearning || require('../lib/agent-learning.js');
   const model = projectSettings?.worker_model || MODEL_BY_SCOPE[ticket.estimated_scope] || CONFIG.claudeModel;
-  const branchName = `forge/${ticket.id}-${Date.now()}`;
+  const branchName = ticket.branch_name || `forge/${ticket.id}-${Date.now()}`;
   let repoDir = null;
-  const agentLearning = require('../lib/agent-learning.js');
+  // const agentLearning declared above via deps
   const startTime = Date.now();
 
   try {
@@ -338,6 +340,18 @@ async function processTicket(ticket, projectSettings = {}) {
     const prUrl = await createPullRequest(ticket, branchName, result.summary || 'Implementation');
 
     log.info('Ticket completed', { id: ticket.id, prUrl, files: filesWritten.length });
+
+
+    // Update ticket with branch name and PR URL data
+    try {
+      if (!ticket.branch_name) {
+        await execute('UPDATE tickets SET branch_name = $1, pr_url = $2, updated_at = NOW() WHERE id = $3',
+          [branchName, prUrl, ticket.id]);
+        log.info('Updated ticket with branch info', { ticketId: ticket.id, branchName });
+      }
+    } catch (dbErr) {
+      log.error('Failed to update ticket DB', { error: dbErr.message });
+    }
 
     return {
       success: true,
@@ -456,7 +470,16 @@ function cloneRepo(repoUrl, targetDir) {
 }
 
 function createBranch(repoDir, branchName) {
-  execSync(`git checkout -b ${branchName}`, { cwd: repoDir, stdio: 'pipe' });
+  try {
+    // Try to fetch and checkout existing branch
+    execSync(`git fetch origin ${branchName}`, { cwd: repoDir, stdio: 'pipe' });
+    execSync(`git checkout ${branchName}`, { cwd: repoDir, stdio: 'pipe' });
+    log.info('Checked out existing branch', { branchName });
+  } catch (e) {
+    // Create new branch if it doesn't exist
+    execSync(`git checkout -b ${branchName}`, { cwd: repoDir, stdio: 'pipe' });
+    log.info('Created new branch', { branchName });
+  }
 }
 
 function writeFiles(repoDir, files) {

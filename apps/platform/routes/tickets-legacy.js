@@ -301,6 +301,10 @@ router.post('/complete', async (req, res) => {
       ticket_id
     ]);
 
+    // Fetch latest ticket data to get repo_url
+    const ticketData = await queryOne('SELECT repo_url FROM tickets WHERE id = $1', [ticket_id]);
+    const repoUrl = ticketData?.repo_url || 'git@github.com:swarm-stack/swarm-workspace.git';
+
     // 2. Trigger Sentinel Verification
     if (pr_url && branch_name) {
       console.log(`[Swarm Protocol] Triggering Sentinel Verification for ${ticket_id}`);
@@ -311,7 +315,7 @@ router.post('/complete', async (req, res) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ticket_id,
-          repo_url: 'git@github.com:swarm-stack/swarm-workspace.git', // Monorepo default
+          repo_url: repoUrl, // Use dynamic repo_url
           branch_name,
           phases: ['static', 'automated', 'sentinel']
         })

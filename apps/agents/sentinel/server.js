@@ -305,8 +305,8 @@ app.post('/verify', async (req, res) => {
       console.log(`[${ticket_id}] Running SENTINEL phase...`);
       const sentinelResult = await sentinelPhase.run(
         repoPath,
-        ticket_id,
-        'main',  // base branch
+        ticketData, // Pass ticket object
+        'main',
         acceptanceCriteria
       );
       result.results.sentinel = sentinelResult;

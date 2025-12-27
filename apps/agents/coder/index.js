@@ -704,7 +704,7 @@ async function cloneAndBranch(ticket) {
 
 
 // Fetch existing file content for surgical modifications
-function fetchExistingFileContent(repoDir, filePath, maxLines = 300) {
+function fetchExistingFileContent(repoDir, filePath, maxLines = 2000) {
   const fullPath = path.join(repoDir, filePath);
   if (!fs.existsSync(fullPath)) {
     return null;
@@ -1073,23 +1073,40 @@ async function processTicket(ticket, projectSettings = {}) {
 
     // Fetch existing file content for files_to_modify
     const existingFiles = {};
+    const filesToFetch = new Set();
+
+    // 1. Add files from RAG Context
     if (ticket.rag_context) {
       try {
         const ctx = typeof ticket.rag_context === 'string'
           ? JSON.parse(ticket.rag_context)
           : ticket.rag_context;
-        const filesToModify = ctx.files_to_modify || [];
-        for (const filePath of filesToModify) {
-          const fileContent = fetchExistingFileContent(repoDir, filePath);
-          if (fileContent) {
-            existingFiles[filePath] = fileContent;
-            log.info('Fetched existing file for modification', { path: filePath, lines: fileContent.split('\n').length });
-          } else {
-            log.warn('File to modify not found', { path: filePath });
-          }
-        }
+        (ctx.files_to_modify || []).forEach(f => filesToFetch.add(f));
       } catch (e) {
-        log.warn('Failed to fetch existing files', { error: e.message });
+        log.warn('Failed to parse rag_context', { error: e.message });
+      }
+    }
+
+    // 2. Add files from Hints (Critical Fallback)
+    if (ticket.files_hint || ticket.file_hints) {
+      const hints = ticket.files_hint || ticket.file_hints;
+      let parsedHints = [];
+      if (typeof hints === 'string') {
+        try { parsedHints = JSON.parse(hints); } catch { parsedHints = [hints]; }
+      } else if (Array.isArray(hints)) {
+        parsedHints = hints;
+      }
+      parsedHints.forEach(f => filesToFetch.add(f));
+    }
+
+    // Fetch Content
+    for (const filePath of filesToFetch) {
+      const fileContent = fetchExistingFileContent(repoDir, filePath);
+      if (fileContent) {
+        existingFiles[filePath] = fileContent;
+        log.info('Fetched existing file for modification', { path: filePath, lines: fileContent.split('\n').length });
+      } else {
+        log.warn('File to modify not found', { path: filePath });
       }
     }
 

@@ -27,6 +27,16 @@
 **Root Cause**: Missing API hooks in `useTickets.js` (`requeueTicket`, `patchTicket`, `getTicketWithDetails`).
 **Solution**: Implemented missing functions in `apps/dashboard/src/hooks/useTickets.js` to wire up UI to Backend.
 
+### 3. Cleanup `swarm-platform` References
+**Problem**: Legacy references to deprecated `swarm-platform` repository existed in the codebase.
+**Solution**:
+- Updated `apps/agents/coder/index.js` to use monorepo path (`/opt/swarm-app/...`).
+- Updated `apps/agents/deploy/manifests/swarm-platform.yaml` to point to `corynaegle-ai/swarm-app`.
+- Deleted obsolete `apps/platform/scripts/backup.sh`.
+
+### 4. Engine Components Verification
+**Verification**: Confirmed `packages/engine/lib/executor.js` and `packages/engine/lib/dispatcher.js` are active dependencies of `packages/engine/lib/engine.js`. `apps/platform/services/ai-dispatcher.js` is a separate active service.
+
 ---
 
 ## Session: December 26, 2024 - Ticket History Logging & RAG Workflow

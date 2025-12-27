@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Filter, Search } from 'lucide-react';
 import { useTickets } from '../hooks/useTickets';
-import { useToast } from '../contexts/ToastContext';
+import { useToast } from '../context/ToastContext';
 import TicketCard from '../components/TicketCard';
 import CreateTicketModal from '../components/CreateTicketModal';
 

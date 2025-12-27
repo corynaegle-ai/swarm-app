@@ -995,8 +995,14 @@ async function processTicket(ticket, projectSettings = {}) {
 
         emitProgress(ticket.id, { type: 'forge_attempt', attempt: currentAttempt, maxAttempts, status: 'passed' });
 
-        // SUCCESS - Commit, Push, PR
-        await commitAndPush(repoDir, ticket, branchName, result.summary);
+        // 4. Commit and Push
+        const commitHash = await commitAndPush(repoDir, ticket, branchName, result.summary);
+
+        if (!commitHash) {
+          throw new Error('No changes were made to the codebase (empty commit). Check if patches were applied correctly.');
+        }
+
+        // 5. Create PR
         const prUrl = await createPullRequest(ticket, branchName, result.summary, result.criteriaStatus);
         log.info('Created PR', { url: prUrl });
 

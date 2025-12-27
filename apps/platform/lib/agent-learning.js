@@ -174,7 +174,7 @@ async function logExecution({
       prUrl, JSON.stringify(filesChanged), JSON.stringify(criteriaStatus)
     ]);
 
-    const executionId = result.rows[0]?.id;
+
     return { executionId, rowId: executionId };
   } catch (err) {
     console.error('[agent-learning] Failed to log execution:', err.message);

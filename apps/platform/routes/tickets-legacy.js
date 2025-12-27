@@ -321,7 +321,33 @@ router.post('/complete', async (req, res) => {
         })
       })
         .then(r => r.json())
-        .then(data => console.log(`[Swarm Protocol] Sentinel Accepted:`, data))
+        .then(async data => {
+          console.log(`[Swarm Protocol] Sentinel Result for ${ticket_id}:`, data.status);
+
+          if (data.status === 'passed') {
+            try {
+              // 1. Mark ticket as DONE
+              console.log(`[Swarm Protocol] Auto-approving ticket ${ticket_id}`);
+              await execute(`
+                UPDATE tickets 
+                SET state = 'done', 
+                    verification_status = 'verified',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+              `, [ticket_id]);
+
+              // 2. Trigger Deploy Agent
+              console.log(`[Swarm Protocol] Triggering Deploy Agent for ${ticket_id}`);
+              await fetch('http://localhost:3457/api/callbacks/ticket-complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ticket_id, status: 'done' })
+              });
+            } catch (err) {
+              console.error(`[Swarm Protocol] Handoff failed: ${err.message}`);
+            }
+          }
+        })
         .catch(err => console.error(`[Swarm Protocol] Sentinel Trigger FAILED: ${err.message}`));
     }
 

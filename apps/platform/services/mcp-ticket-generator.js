@@ -18,21 +18,21 @@ async function generateMcpTickets(spec, projectId, jobId = null) {
   if (!spec || !spec.name) {
     return { success: false, error: 'Invalid spec: missing name' };
   }
-  
+
   if (!projectId) {
     return { success: false, error: 'Project ID required' };
   }
-  
+
   // Verify project exists
   const project = await queryOne('SELECT * FROM projects WHERE id = $1', [projectId]);
   if (!project) {
     return { success: false, error: 'Project not found' };
   }
-  
+
   const tickets = [];
   const mcpName = spec.name;
   const prefix = `TKT-${randomUUID().slice(0, 8).toUpperCase()}`;
-  
+
   // 1. Scaffold Epic Ticket
   const epicId = `${prefix}-EPIC`;
   tickets.push({
@@ -52,17 +52,17 @@ async function generateMcpTickets(spec, projectId, jobId = null) {
     files_hint: 'package.json, src/index.ts, tsconfig.json, README.md',
     mcp_job_id: jobId
   });
-  
+
   // 2. Tool Implementation Tickets
   const tools = spec.tools || [];
   for (let i = 0; i < tools.length; i++) {
     const tool = tools[i];
     const toolId = `${prefix}-TOOL-${i + 1}`;
-    
+
     // Estimate scope based on parameter complexity
     const paramCount = tool.parameters?.properties ? Object.keys(tool.parameters.properties).length : 0;
     const scope = paramCount > 5 ? 'large' : paramCount > 2 ? 'medium' : 'small';
-    
+
     tickets.push({
       id: toolId,
       project_id: projectId,
@@ -81,13 +81,13 @@ async function generateMcpTickets(spec, projectId, jobId = null) {
       mcp_job_id: jobId
     });
   }
-  
+
   // 3. Resource Implementation Tickets (if any)
   const resources = spec.resources || [];
   for (let i = 0; i < resources.length; i++) {
     const resource = resources[i];
     const resourceId = `${prefix}-RES-${i + 1}`;
-    
+
     tickets.push({
       id: resourceId,
       project_id: projectId,
@@ -105,7 +105,7 @@ async function generateMcpTickets(spec, projectId, jobId = null) {
       mcp_job_id: jobId
     });
   }
-  
+
   // 4. Validation Ticket
   const validationId = `${prefix}-VAL`;
   tickets.push({
@@ -125,7 +125,7 @@ async function generateMcpTickets(spec, projectId, jobId = null) {
     files_hint: 'test/*.test.ts, src/**/*.ts',
     mcp_job_id: jobId
   });
-  
+
   // 5. Packaging Ticket
   const packageId = `${prefix}-PKG`;
   tickets.push({
@@ -145,20 +145,20 @@ async function generateMcpTickets(spec, projectId, jobId = null) {
     files_hint: 'dist/, package.json',
     mcp_job_id: jobId
   });
-  
+
   // Insert all tickets using PostgreSQL transaction
   const pool = getPool();
   const client = await pool.connect();
-  
+
   try {
     await client.query('BEGIN');
-    
+
     for (const t of tickets) {
       await client.query(`
         INSERT INTO tickets (
           id, project_id, title, description, acceptance_criteria,
-          state, epic, estimated_scope, files_hint
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          state, epic, estimated_scope, files_hint, repo_url
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       `, [
         t.id,
         t.project_id,
@@ -168,14 +168,15 @@ async function generateMcpTickets(spec, projectId, jobId = null) {
         t.state,
         t.epic,
         t.estimated_scope,
-        t.files_hint
+        t.files_hint,
+        project.repo_url || null
       ]);
     }
-    
+
     await client.query('COMMIT');
     console.log(`[MCP Tickets] Created ${tickets.length} tickets for ${mcpName}`);
-    return { 
-      success: true, 
+    return {
+      success: true,
       tickets: tickets.map(t => ({ id: t.id, title: t.title, state: t.state })),
       count: tickets.length,
       epicId

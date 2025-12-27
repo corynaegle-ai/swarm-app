@@ -1003,6 +1003,24 @@ async function createPullRequest(ticket, branchName, summary, criteriaStatus) {
 
     // If it's a validation error on 'head', we might try the other format
     lastError = res.data;
+
+    // Handle "PR already exists" error (Idempotency)
+    if (res.status === 422 && res.data.errors?.some(e => e.message?.includes('A pull request already exists'))) {
+      log.info('PR already exists, fetching existing URL...', { head: headRef });
+      const listRes = await httpRequest(`https://api.github.com/repos/${owner}/${repo}/pulls?head=${headRef}&state=open`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `token ${CONFIG.githubToken}`,
+          'User-Agent': 'Swarm-Agent-FORGE'
+        }
+      });
+      if (listRes.status === 200 && listRes.data.length > 0) {
+        const prUrl = listRes.data[0].html_url;
+        await logActivity(ticket.id, 'pr_recovered', 'Recovered existing PR', { pr_url: prUrl });
+        return prUrl;
+      }
+    }
+
     if (res.status !== 422) break; // Don't retry for non-validation errors (e.g. 401, 403)
   }
 

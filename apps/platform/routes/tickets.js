@@ -126,15 +126,15 @@ router.get('/stuck', requireAuth, requireTenant, requirePermission('view_project
 // POST /api/tickets - Create ticket
 router.post('/', requireAuth, requireTenant, requirePermission('manage_tickets'), async (req, res) => {
   try {
-    const { title, description, type, priority, project_id, parent_id, dependencies } = req.body;
+    const { title, description, type, priority, project_id, parent_id, dependencies, repo_url } = req.body;
     if (!title) return res.status(400).json({ error: 'Title required' });
 
     const id = randomUUID();
 
     await execute(`
-      INSERT INTO tickets (id, title, description, project_id, parent_id, state, created_at)
-      VALUES ($1, $2, $3, $4, $5, 'draft', CURRENT_TIMESTAMP)
-    `, [id, title, description, project_id, parent_id || null]);
+      INSERT INTO tickets (id, title, description, project_id, parent_id, state, created_at, repo_url)
+      VALUES ($1, $2, $3, $4, $5, 'draft', CURRENT_TIMESTAMP, $6)
+    `, [id, title, description, project_id, parent_id || null, repo_url || null]);
 
     res.status(201).json({ success: true, id });
   } catch (err) {

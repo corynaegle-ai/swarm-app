@@ -929,8 +929,8 @@ Respond with valid JSON in this exact structure:
         INSERT INTO tickets (
           id, project_id, title, description, acceptance_criteria,
           state, epic, estimated_scope, files_hint, files_involved,
-          design_session
-        ) VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7, $8, $9, $10)
+          design_session, repo_url
+        ) VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7, $8, $9, $10, $11)
       `, [
         ticketId,
         projectId,
@@ -941,7 +941,8 @@ Respond with valid JSON in this exact structure:
         ticket.estimated_scope || 'medium',
         ticket.files_hint || '',
         JSON.stringify(ticket.files_involved || []),
-        session.id
+        session.id,
+        session.repo_url || null
       ]);
 
       createdTickets.push({

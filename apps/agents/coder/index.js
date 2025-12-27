@@ -235,7 +235,9 @@ async function generateCode(ticket, heartbeatFn, projectSettings = {}, existingF
 
     const usage = { inputTokens: res.data.usage?.input_tokens || 0, outputTokens: res.data.usage?.output_tokens || 0 };
     const content = res.data.content?.[0]?.text || '';
+    log.info('DEBUG_RAW_LLM_RESPONSE', { content_summary: content.substring(0, 200) + '...', raw_length: content.length, full_content: content });
     const parsed = parseForgeResponse(content, ticket);
+    log.info('DEBUG_PARSED_RESPONSE', { files: parsed.files });
     return { ...parsed, usage };
   } finally {
     clearInterval(heartbeatTimer);

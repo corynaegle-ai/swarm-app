@@ -49,7 +49,7 @@ async function validateSyntax(files) {
         // Fallback: write temp file and use Node --check
         // NodeJS check cannot handle JSX or non-standard syntax
         if (file.path.match(/\.jsx$/i)) {
-          return; // Skip JSX validation in fallback mode
+          continue; // Skip JSX validation in fallback mode
         }
 
         const tmpPath = `/tmp/syntax-check-${Date.now()}-${path.basename(file.path)}`;

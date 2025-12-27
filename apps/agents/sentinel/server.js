@@ -8,6 +8,7 @@
  * - sentinel: LLM code review (Phase 5, not implemented yet)
  */
 
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');

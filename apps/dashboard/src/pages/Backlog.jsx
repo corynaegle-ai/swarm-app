@@ -65,7 +65,7 @@ const Backlog = () => {
             boxShadow: '0 4px 15px rgba(0, 0, 0, 0.1)'
           }}
           onMouseEnter={(e) => {
-            e.target.style.boxShadow = '0 8px 25px rgba(255, 68, 68, 0.4), 0 4px 15px rgba(255, 68, 68, 0.2)';
+            e.target.style.boxShadow = '0 8px 25px rgba(255, 68, 68, 0.3), 0 4px 15px rgba(255, 68, 68, 0.15)';
             e.target.style.transform = 'translateY(-2px)';
           }}
           onMouseLeave={(e) => {

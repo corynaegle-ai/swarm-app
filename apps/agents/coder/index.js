@@ -188,14 +188,14 @@ async function claimTicket(projectId = null) {
 }
 
 async function updateTicketStatus(ticketId, status) {
-  // Use PATCH /api/tickets/:id for status updates
-  const res = await httpRequest(`${CONFIG.apiUrl}/api/tickets/${ticketId}`, {
-    method: 'PATCH',
+  // Use POST /status (legacy agent endpoint)
+  const res = await httpRequest(`${CONFIG.apiUrl}/status`, {
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Agent-Key': CONFIG.agentServiceKey
     }
-  }, { state: status });
+  }, { ticket_id: ticketId, agent_id: CONFIG.agentId, state: status });
 
   if (res.status >= 400) {
     log.warn(`Failed to update status to ${status}`, { status: res.status, error: res.data });
@@ -209,7 +209,7 @@ async function sendHeartbeat(ticketId) {
   }, { agent_id: CONFIG.agentId });
 }
 
-async function completeTicket(ticketId, success, prUrl = null, error = null, criteriaStatus = null, filesChanged = []) {
+async function completeTicket(ticketId, success, prUrl = null, error = null, criteriaStatus = null, filesChanged = [], branchName = null) {
   // Use legacy /complete endpoint which expects ticket_id in body
   const res = await httpRequest(`${CONFIG.apiUrl}/complete`, {
     method: 'POST',
@@ -219,6 +219,7 @@ async function completeTicket(ticketId, success, prUrl = null, error = null, cri
     agent_id: CONFIG.agentId,
     success,
     pr_url: prUrl,
+    branch_name: branchName,
     error,
     criteria_status: criteriaStatus,
     files_changed: filesChanged
@@ -956,7 +957,7 @@ async function processTicket(ticket, projectSettings = {}) {
         const prUrl = await createPullRequest(ticket, branchName, result.summary, result.criteriaStatus);
         log.info('Created PR', { url: prUrl });
 
-        await completeTicket(ticket.id, true, prUrl, null, result.criteriaStatus, filesWritten);
+        await completeTicket(ticket.id, true, prUrl, null, result.criteriaStatus, filesWritten, branchName);
         log.info('Ticket completed successfully', { ticketId: ticket.id, prUrl, attempts: currentAttempt });
 
         if (agentLearning) {

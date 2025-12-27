@@ -132,7 +132,7 @@ function httpRequest(url, options = {}, body = null) {
     });
 
     req.on('error', reject);
-    req.setTimeout(30000, () => {
+    req.setTimeout(300000, () => {
       req.destroy();
       reject(new Error('Request timeout'));
     });

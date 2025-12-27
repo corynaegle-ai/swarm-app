@@ -121,6 +121,7 @@ function App() {
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>
+      </ToastProvider>
     </AuthProvider>
   );
 }

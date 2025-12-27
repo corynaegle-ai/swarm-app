@@ -56,7 +56,8 @@ module.exports = {
         {
             name: 'swarm-verifier',
             cwd: '/opt/swarm-app/apps/agents/sentinel',
-            script: 'server.js'
+            script: 'server.js',
+            env_file: '/opt/swarm-app/apps/platform/.env'
         },
         {
             name: 'deploy-agent',

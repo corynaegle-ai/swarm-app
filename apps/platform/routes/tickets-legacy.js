@@ -26,7 +26,7 @@ router.get('/stats', async (req, res) => {
 router.get('/agents/available', async (req, res) => {
   try {
     const { type, runtime } = req.query;
-    
+
     let sql = `
       SELECT id, name, version, runtime, description, 
              capabilities, timeout_seconds
@@ -35,17 +35,17 @@ router.get('/agents/available', async (req, res) => {
     `;
     const params = [];
     let paramIndex = 1;
-    
+
     if (runtime) {
       sql += ` AND runtime = $${paramIndex++}`;
       params.push(runtime);
     }
-    
+
     sql += ` ORDER BY name, version DESC`;
-    
+
     const agents = await queryAll(sql, params);
-    
-    res.json({ 
+
+    res.json({
       agents: agents.map(a => ({
         id: a.id,
         name: a.name,
@@ -73,15 +73,15 @@ router.post('/claim', async (req, res) => {
       SELECT id, name, version FROM agent_definitions 
       WHERE id = $1 OR name = $1
     `, [agent_id]);
-    
+
     if (!agentDef) {
       console.warn(`[claim] Invalid agent_id: ${agent_id} - not found in agent_definitions`);
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Invalid agent_id - not registered in agent_definitions',
         hint: 'Use GET /agents/available to list valid agent IDs'
       });
     }
-    
+
     // Use the canonical agent ID from the definition
     const canonicalAgentId = agentDef.id;
 
@@ -135,7 +135,7 @@ router.post('/claim', async (req, res) => {
     }
 
     const ticket = await queryOne(sql, params);
-    
+
     if (!ticket) return res.json({ ticket: null, message: 'No tickets available' });
 
     // Log state transition
@@ -162,19 +162,19 @@ router.post('/claim', async (req, res) => {
     const ticketMcpServers = ticket.mcp_servers || [];
     const projectMcpServers = ticket.project_mcp_servers || [];
     const effectiveMcpServers = ticketMcpServers.length > 0 ? ticketMcpServers : projectMcpServers;
-    
+
     // Build projectSettings with model config and mcp_servers
     const projectSettings = {
       worker_model: 'claude-sonnet-4-20250514',
       mcp_servers: projectMcpServers
     };
-    
+
     // Remove project fields from ticket object
     delete ticket.project_repo_url;
     delete ticket.project_type;
     delete ticket.project_name;
     delete ticket.project_mcp_servers;
-    
+
     // Claim the ticket - set to assigned state with lease
     const leaseMinutes = 30;
     await execute(`
@@ -187,11 +187,11 @@ router.post('/claim', async (req, res) => {
           last_heartbeat = NOW()
       WHERE id = $3
     `, [canonicalAgentId, vm_id || null, ticket.id]);
-    
-    res.json({ 
-      ticket: { 
-        ...ticket, 
-        state: 'assigned', 
+
+    res.json({
+      ticket: {
+        ...ticket,
+        state: 'assigned',
         assignee_id: canonicalAgentId,
         mcp_servers: effectiveMcpServers,
         user_id: ticket.tenant_id || 'default'
@@ -245,7 +245,22 @@ router.post('/complete', async (req, res) => {
       outputs ? JSON.stringify(outputs) : null,
       ticket_id
     ]);
-    
+
+    // Trigger Sentinel Verification (Fire and forget provided ticket is ready)
+    if (pr_url && branch_name) {
+      console.log(`[Sentintel] Triggering verification for ${ticket_id}`);
+      fetch('http://localhost:3006/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticket_id,
+          repo_url: 'git@github.com:swarm-stack/swarm-workspace.git', // TODO: Get from project? Assuming monolithic repo for now
+          branch_name,
+          phases: ['static', 'automated', 'sentinel']
+        })
+      }).catch(err => console.error(`[Sentinel] Trigger failed: ${err.message}`));
+    }
+
     res.json({ success: true, state: 'in_review' });
   } catch (err) {
     console.error('POST /complete error:', err);
@@ -260,7 +275,7 @@ router.post('/release', async (req, res) => {
     if (!ticket_id) return res.status(400).json({ error: 'ticket_id required' });
 
     const logEntry = `[${new Date().toISOString()}] Released: ${reason || 'No reason provided'}\n`;
-    
+
     await execute(`
       UPDATE tickets 
       SET state = 'ready', 
@@ -271,7 +286,7 @@ router.post('/release', async (req, res) => {
           progress_log = COALESCE(progress_log, '') || $1
       WHERE id = $2
     `, [logEntry, ticket_id]);
-    
+
     res.json({ success: true, state: 'ready' });
   } catch (err) {
     console.error('POST /release error:', err);
@@ -393,11 +408,11 @@ router.post('/execution', async (req, res) => {
       outcome, prUrl, filesChanged,
       criteriaStatus, errorMessage
     } = req.body || {};
-    
+
     if (!taskId || !agentId) {
       return res.status(400).json({ error: 'taskId and agentId required' });
     }
-    
+
     if (outcome === 'failure' || outcome === 'timeout' || errorMessage) {
       agentLearning.logExecutionWithError({
         taskId, agentId, tenantId, model,
@@ -417,7 +432,7 @@ router.post('/execution', async (req, res) => {
         prUrl, filesChanged, criteriaStatus
       });
     }
-    
+
     res.json({ success: true, logged: true });
   } catch (e) {
     console.error('Execution logging failed:', e.message);

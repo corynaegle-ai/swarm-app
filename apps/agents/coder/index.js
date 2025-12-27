@@ -187,6 +187,21 @@ async function claimTicket(projectId = null) {
   throw new Error(`Claim failed: ${res.status} - ${JSON.stringify(res.data)}`);
 }
 
+async function updateTicketStatus(ticketId, status) {
+  // Use PATCH /api/tickets/:id for status updates
+  const res = await httpRequest(`${CONFIG.apiUrl}/api/tickets/${ticketId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Agent-Key': CONFIG.agentServiceKey
+    }
+  }, { state: status });
+
+  if (res.status >= 400) {
+    log.warn(`Failed to update status to ${status}`, { status: res.status, error: res.data });
+  }
+}
+
 async function sendHeartbeat(ticketId) {
   await httpRequest(`${CONFIG.apiUrl}/tickets/${ticketId}/heartbeat`, {
     method: 'POST',
@@ -195,10 +210,12 @@ async function sendHeartbeat(ticketId) {
 }
 
 async function completeTicket(ticketId, success, prUrl = null, error = null, criteriaStatus = null, filesChanged = []) {
-  await httpRequest(`${CONFIG.apiUrl}/tickets/${ticketId}/complete`, {
+  // Use legacy /complete endpoint which expects ticket_id in body
+  const res = await httpRequest(`${CONFIG.apiUrl}/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   }, {
+    ticket_id: ticketId,
     agent_id: CONFIG.agentId,
     success,
     pr_url: prUrl,
@@ -206,6 +223,10 @@ async function completeTicket(ticketId, success, prUrl = null, error = null, cri
     criteria_status: criteriaStatus,
     files_changed: filesChanged
   });
+
+  if (res.status >= 400) {
+    throw new Error(`Failed to complete ticket: ${res.status} - ${JSON.stringify(res.data)}`);
+  }
 }
 
 // Claude API call with FORGE persona
@@ -795,6 +816,9 @@ function emitProgress(ticketId, data) {
 async function processTicket(ticket, projectSettings = {}) {
   log.info('Processing ticket', { ticketId: ticket.id, title: ticket.title });
   await logActivity(ticket.id, 'ticket_claimed', `Claimed by ${CONFIG.agentId}`, { agent_id: CONFIG.agentId });
+
+  // Explicitly set to in_progress (as claim only sets assigned)
+  await updateTicketStatus(ticket.id, 'in_progress');
 
   let repoDir = null;
   let branchName = null;

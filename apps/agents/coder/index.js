@@ -20,6 +20,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Explicitly load platform .env for reliable secret injection
+require('dotenv').config({ path: '/opt/swarm-app/apps/platform/.env' });
+
 // Agent Learning System for execution telemetry
 let agentLearning = null;
 try {
@@ -538,6 +541,13 @@ Your previous code generation attempt had the following errors that must be fixe
 
 ${errorContext}
 
+## CRITICAL INSTRUCTION FOR RETRY
+
+If any errors above mention "PATCH FAILED", it means your surgical patches could not be applied (likely due to mismatched search text).
+**DO NOT ATTEMPT TO PATCH THESE FILES AGAIN.**
+Instead, you MUST regenerate the **FULL CONTENT** of those specific files and use `action: "create"` to overwrite them completely.
+This is the only way to fix the state.
+
 ## Instructions for Retry
 
 1. Carefully review each error above
@@ -779,7 +789,122 @@ function writeFiles(repoDir, files) {
     }
   }
 
-  return written;
+  return { written, failed: [] }; // Legacy compat if needed, but we'll use object return
+}
+
+// Rewritten writeFiles to support detailed error reporting
+function writeFilesDetailed(repoDir, files) {
+  const written = [];
+  const failed = [];
+
+  for (const file of files) {
+    const filePath = path.join(repoDir, file.path);
+    const fileDir = path.dirname(filePath);
+
+    try {
+      if (!fs.existsSync(fileDir)) {
+        fs.mkdirSync(fileDir, { recursive: true });
+      }
+
+      if (file.action === 'modify' && file.patches && Array.isArray(file.patches)) {
+        // SURGICAL MODIFICATION: Apply patches
+        if (!fs.existsSync(filePath)) {
+          log.error('Cannot modify non-existent file', { path: file.path });
+          failed.push({ path: file.path, error: 'File does not exist' });
+          continue;
+        }
+
+        let fileContent = fs.readFileSync(filePath, 'utf8');
+        let patchesApplied = 0;
+        let patchErrors = [];
+
+        for (const patch of file.patches) {
+          if (!patch.search || patch.replace === undefined) {
+            patchErrors.push('Invalid patch format');
+            continue;
+          }
+
+          // 1. Try Exact Match
+          if (fileContent.includes(patch.search)) {
+            fileContent = fileContent.replace(patch.search, patch.replace);
+            patchesApplied++;
+            continue;
+          }
+
+          // 2. Try Fuzzy Match (Whitespace Normalization)
+          const normalize = (str) => str.replace(/\s+/g, ' ').trim();
+          const normContent = normalize(fileContent);
+          const normSearch = normalize(patch.search);
+
+          if (normContent.includes(normSearch)) {
+            log.info('Patch used fuzzy match', { path: file.path });
+            // Strategy: Regex escape the search string, replace \s+ with \s+, and try regex match
+            const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const sourceRegexPattern = patch.search.trim().split(/\s+/).map(escapeRegExp).join('\\s+');
+            const sourceRegex = new RegExp(sourceRegexPattern);
+
+            if (sourceRegex.test(fileContent)) {
+              fileContent = fileContent.replace(sourceRegex, patch.replace);
+              patchesApplied++;
+              continue;
+            }
+          }
+
+          patchErrors.push(`Patch search text not found: "${patch.search.substring(0, 50)}..."`);
+          log.warn('Patch search text not found', {
+            path: file.path,
+            searchPreview: patch.search.substring(0, 50) + '...'
+          });
+        }
+
+        if (patchesApplied === file.patches.length) {
+          fs.writeFileSync(filePath, fileContent);
+          written.push(file.path);
+          log.info('Applied patches to file', {
+            path: file.path,
+            patchesApplied,
+            totalPatches: file.patches.length
+          });
+        } else {
+          // If ANY patch failed, we mark the whole file as failed to trigger rewrite
+          // But if SOME applied, we might have partial state. Ideally we assume atomic per file.
+          // For now, we only write if we can apply them cleanly or if we want to support partials?
+          // Rule: If patches failed, do NOT write partials. Keep file clean.
+          // REVISION: The original code wrote if `patchesApplied > 0`.
+          // But for fallback to work reliably, we should fail hard if not ALL applied?
+          // Actually, if we fail to apply one patch, the code might be broken.
+          // Let's stick to: If any errors, treat as failure for that file.
+          if (patchErrors.length > 0) {
+            log.warn('Partial patch failure - failing file write to trigger rewrite', { path: file.path, errors: patchErrors });
+            failed.push({ path: file.path, error: patchErrors.join('; ') });
+          } else {
+            // Should verify patchesApplied > 0 or files.patches was empty?
+            // If patches array empty, nothing happens.
+            if (file.patches.length > 0) {
+              // This path should be covered by patchesApplied === file.patches.length
+            }
+          }
+        }
+
+      } else {
+        // CREATE: Write entire file content
+        fs.writeFileSync(filePath, file.content);
+        written.push(file.path);
+        log.info('Wrote file', { path: file.path, bytes: file.content ? file.content.length : 0 });
+      }
+    } catch (err) {
+      log.error('File write failed', { path: file.path, error: err.message });
+      failed.push({ path: file.path, error: err.message });
+    }
+  }
+
+  return { written, failed };
+}
+
+// Wrapper to maintain backward compatibility during transition if needed
+function writeFiles(repoDir, files) {
+  const result = writeFilesDetailed(repoDir, files);
+  return result.written;
 }
 
 // We can't log individual file ops here easily without ticket ID.
@@ -998,7 +1123,36 @@ async function processTicket(ticket, projectSettings = {}) {
           }
         }
 
-        const filesWritten = writeFiles(repoDir, result.files);
+        const writeResult = writeFilesDetailed(repoDir, result.files);
+        const filesWritten = writeResult.written;
+
+        // CHECK FOR PATCH FAILURES (Smart Fallback)
+        if (writeResult.failed.length > 0) {
+          log.warn('Write/Patch failures detected - triggering fallback retry', { failedFiles: writeResult.failed });
+
+          const patchErrors = writeResult.failed.map(f => ({
+            file: f.path,
+            line: 1,
+            message: `PATCH FAILED: ${f.error}. Critical error. STOP using 'modify' patches for this file. You MUST rewrite the ENTIRE file using action: "create" with the full content.`
+          }));
+
+          // Inject these as validation errors
+          attemptHistory.push({
+            attempt: currentAttempt,
+            durationMs: Date.now() - attemptStart,
+            errors: patchErrors,
+            tokens: { input: result.usage?.inputTokens, output: result.usage?.outputTokens },
+            type: 'patch_failure'
+          });
+
+          lastValidationErrors = patchErrors;
+          emitProgress(ticket.id, { type: 'forge_attempt', attempt: currentAttempt, maxAttempts, status: 'failed', errorCount: patchErrors.length, message: 'Patch failed, retrying with rewrite' });
+
+          if (currentAttempt < maxAttempts) {
+            continue; // Retry immediately
+          }
+          // If max attempts reached, we fall through to normal error handling or validation check
+        }
         emitProgress(ticket.id, { type: 'forge_attempt', attempt: currentAttempt, maxAttempts, status: 'validating' });
 
         // VALIDATION PHASE

@@ -1,5 +1,8 @@
 {
   "name": "swarm-coder-agent",
   "version": "1.0.0",
-  "main": "index.js"
+  "main": "index.js",
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  }
 }

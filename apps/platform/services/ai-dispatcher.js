@@ -37,54 +37,55 @@ const AI_PERMISSIONS = {
     'suggest',            // Suggest improvements to description
     'validate_input'      // Check if description is sufficient
   ],
-  
+
   // AI gathering requirements through Q&A
   'clarifying': [
     'clarify',            // Ask clarifying questions
     'summarize',          // Summarize conversation so far
     'suggest',            // Make suggestions
-    'check_completeness'  // Check if ready for spec generation
+    'check_completeness', // Check if ready for spec generation
+    'generate_spec'       // Allow early spec generation
   ],
-  
+
   // Ready to generate spec card
   'ready_for_docs': [
     'generate_spec',      // Create specification document
     'summarize'           // Summarize gathered requirements
   ],
-  
+
   // User reviewing/editing spec card
   'reviewing': [
     'explain',            // Explain parts of the spec
     'suggest_edits',      // Suggest improvements
     'validate_spec'       // Check spec completeness
   ],
-  
+
   // Spec approved, ready for build
   'approved': [
     'generate_tickets',   // Create tickets from spec (requires approval)
     'estimate',           // Provide time/effort estimates
     'plan_execution'      // Create execution plan
   ],
-  
+
   // Autonomous agents executing
   'building': [
     'status_update',      // Report build progress
     'diagnose',           // Diagnose issues
     'decompose_ticket'    // Break down complex tickets
   ],
-  
+
   // Terminal states - limited or no AI actions
   'completed': [
     'summarize',          // Summarize what was built
     'generate_report'     // Create completion report
   ],
-  
+
   'failed': [
     'diagnose',           // Help diagnose what went wrong
     'suggest_fixes',      // Suggest remediation steps
     'summarize'           // Summarize failure context
   ],
-  
+
   'cancelled': []         // No AI actions on cancelled sessions
 };
 
@@ -98,7 +99,7 @@ const BLOCKED_HINTS = {
   },
   'clarifying': {
     message: 'AI is asking clarifying questions',
-    suggestedAction: 'answer_questions', 
+    suggestedAction: 'answer_questions',
     uiComponent: 'ChatInterface'
   },
   'ready_for_docs': {
@@ -155,8 +156,8 @@ class AIDispatcher {
     // 1. Get session state
     const session = await queryOne('SELECT * FROM hitl_sessions WHERE id = $1', [sessionId]);
     if (!session) {
-      return { 
-        status: 'error', 
+      return {
+        status: 'error',
         error: 'Session not found',
         code: 'SESSION_NOT_FOUND'
       };
@@ -232,29 +233,29 @@ class AIDispatcher {
   /** Create a pending approval request */
   async createApprovalRequest(sessionId, action, context) {
     const id = uuidv4();
-    
+
     // Get tenant_id from session for proper isolation
     const session = await queryOne('SELECT tenant_id FROM hitl_sessions WHERE id = $1', [sessionId]);
-    
+
     await execute(`
       INSERT INTO hitl_approvals (id, session_id, tenant_id, action, context, status, approval_type, created_at)
       VALUES ($1, $2, $3, $4, $5, 'pending', 'action_approval', NOW())
     `, [id, sessionId, session?.tenant_id, action, JSON.stringify(context)]);
-    
+
     // Broadcast approval request
     broadcast.approvalRequested(sessionId, {
       approvalId: id,
       action,
       context
     });
-    
+
     // Record event (with graceful fallback if hitl_events doesn't exist)
     try {
       await this.logEvent(sessionId, 'approval_requested', { approvalId: id, action });
     } catch (e) {
       console.warn('Could not log event (hitl_events table may not exist):', e.message);
     }
-    
+
     return id;
   }
 
@@ -264,7 +265,7 @@ class AIDispatcher {
       // Get tenant_id from session for proper isolation
       const session = await queryOne('SELECT tenant_id FROM hitl_sessions WHERE id = $1', [sessionId]);
       const tenantId = session?.tenant_id || null;
-      
+
       await execute(`
         INSERT INTO hitl_events (id, session_id, tenant_id, event_type, payload, created_at)
         VALUES ($1, $2, $3, $4, $5, NOW())
@@ -290,7 +291,7 @@ class AIDispatcher {
         return this.executeSuggest(session, context);
       case 'validate_input':
         return this.executeValidateInput(session, context);
-      
+
       // Clarifying state actions  
       case 'clarify':
         return this.executeClarify(session, context);
@@ -298,11 +299,11 @@ class AIDispatcher {
         return this.executeSummarize(session, context);
       case 'check_completeness':
         return this.executeCheckCompleteness(session, context);
-      
+
       // Ready for docs state actions
       case 'generate_spec':
         return this.executeGenerateSpec(session, context);
-      
+
       // Reviewing state actions
       case 'explain':
         return this.executeExplain(session, context);
@@ -310,7 +311,7 @@ class AIDispatcher {
         return this.executeSuggestEdits(session, context);
       case 'validate_spec':
         return this.executeValidateSpec(session, context);
-      
+
       // Approved state actions
       case 'generate_tickets':
         return this.executeGenerateTickets(session, context);
@@ -318,23 +319,23 @@ class AIDispatcher {
         return this.executeEstimate(session, context);
       case 'plan_execution':
         return this.executePlanExecution(session, context);
-      
+
       // Building state actions
       case 'status_update':
         return this.executeStatusUpdate(session, context);
       case 'decompose_ticket':
         return this.executeDecomposeTicket(session, context);
-      
+
       // Failed state actions
       case 'diagnose':
         return this.executeDiagnose(session, context);
       case 'suggest_fixes':
         return this.executeSuggestFixes(session, context);
-      
+
       // Completed state actions
       case 'generate_report':
         return this.executeGenerateReport(session, context);
-        
+
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -447,8 +448,8 @@ Respond with JSON:
       .map(m => `${m.role}: ${m.content}`)
       .join('\n\n');
 
-    const clarificationContext = session.clarification_context 
-      ? (typeof session.clarification_context === 'string' ? JSON.parse(session.clarification_context) : session.clarification_context) 
+    const clarificationContext = session.clarification_context
+      ? (typeof session.clarification_context === 'string' ? JSON.parse(session.clarification_context) : session.clarification_context)
       : {};
 
     // Build system prompt based on project type
@@ -460,22 +461,22 @@ Respond with JSON:
       try {
         const promptPath = path.join(__dirname, '../prompts/build-feature-spec.md');
         systemPrompt = fs.readFileSync(promptPath, 'utf8');
-        
+
         // Parse repo_analysis
         let repoAnalysis = {};
         if (session.repo_analysis) {
           try {
-            repoAnalysis = typeof session.repo_analysis === 'string' 
-              ? JSON.parse(session.repo_analysis) 
+            repoAnalysis = typeof session.repo_analysis === 'string'
+              ? JSON.parse(session.repo_analysis)
               : session.repo_analysis;
           } catch (e) {
             repoAnalysis = { error: 'Failed to parse repo analysis' };
           }
         }
-        
+
         // Inject repo analysis into prompt
         systemPrompt = systemPrompt.replace('{{REPO_ANALYSIS}}', JSON.stringify(repoAnalysis, null, 2));
-        
+
         userContent = `## Feature Request
 ${session.project_name || 'Unnamed Feature'}
 
@@ -514,7 +515,7 @@ ${session.repo_url || 'Not specified'}`;
     }
 
     const parsed = parseJsonResponse(response.content);
-    
+
     if (parsed?.spec) {
       // Store spec in session
       await execute(`
@@ -522,10 +523,10 @@ ${session.repo_url || 'Not specified'}`;
         SET spec_card = $1, state = 'reviewing', updated_at = NOW()
         WHERE id = $2
       `, [JSON.stringify(parsed.spec), session.id]);
-      
+
       // Broadcast state change to reviewing
       broadcast.sessionUpdate(session.id, 'reviewing', 70);
-      
+
       // Broadcast spec generated event
       broadcast.specGenerated(session.id, {
         spec: parsed.spec,
@@ -680,7 +681,7 @@ Respond with valid JSON in this exact structure:
 
     // 5. Parse response
     const parsed = parseJsonResponse(response.content);
-    
+
     if (!parsed) {
       return {
         type: 'revision',
@@ -693,7 +694,7 @@ Respond with valid JSON in this exact structure:
     // 6. Store the feedback as a message
     const userMsgId = uuidv4();
     const assistantMsgId = uuidv4();
-    
+
     // Store user feedback message (use 'chat' type as it's a user revision request)
     await execute(`
       INSERT INTO hitl_messages (id, session_id, role, content, message_type)
@@ -768,25 +769,25 @@ Respond with valid JSON in this exact structure:
   async executeGenerateTickets(session, context) {
     // Validate we have a spec to work with
     if (!session.spec_card) {
-      return { 
-        type: 'tickets', 
-        tickets: [], 
-        status: 'error', 
-        message: 'No specification found. Generate spec first.' 
+      return {
+        type: 'tickets',
+        tickets: [],
+        status: 'error',
+        message: 'No specification found. Generate spec first.'
       };
     }
 
     let spec;
     try {
-      spec = typeof session.spec_card === 'string' 
-        ? JSON.parse(session.spec_card) 
+      spec = typeof session.spec_card === 'string'
+        ? JSON.parse(session.spec_card)
         : session.spec_card;
     } catch (e) {
-      return { 
-        type: 'tickets', 
-        tickets: [], 
-        status: 'error', 
-        message: 'Failed to parse specification.' 
+      return {
+        type: 'tickets',
+        tickets: [],
+        status: 'error',
+        message: 'Failed to parse specification.'
       };
     }
 
@@ -799,37 +800,37 @@ Respond with valid JSON in this exact structure:
       try {
         const promptPath = path.join(__dirname, '../prompts/build-feature-tickets.md');
         systemPrompt = fs.readFileSync(promptPath, 'utf8');
-        
+
         // Parse repo_analysis
         let repoAnalysis = {};
         if (session.repo_analysis) {
           try {
-            repoAnalysis = typeof session.repo_analysis === 'string' 
-              ? JSON.parse(session.repo_analysis) 
+            repoAnalysis = typeof session.repo_analysis === 'string'
+              ? JSON.parse(session.repo_analysis)
               : session.repo_analysis;
           } catch (e) {
             repoAnalysis = { error: 'Failed to parse repo analysis' };
           }
         }
-        
+
 
         // ============================================
         // RAG CONTEXT INJECTION
         // Fetch relevant code snippets for ticket generation
         // ============================================
         let codeContext = 'No code context available.';
-        
+
         if (session.repo_url) {
           try {
             // Build RAG query from spec features
             const features = spec.features || [];
             const featureNames = features.map(f => f.name || f.title || '').join(', ');
             const ragQuery = `${spec.title || session.description || ''} ${featureNames}`.trim();
-            
+
             console.log(`[AIDispatcher] Fetching RAG context for ticket generation: "${ragQuery.slice(0, 60)}..."`);
-            
+
             const ragResult = await fetchContext(ragQuery, [session.repo_url], { maxTokens: 6000 });
-            
+
             if (ragResult.success && ragResult.context) {
               codeContext = ragResult.context;
               console.log(`[AIDispatcher] RAG returned ${ragResult.tokenCount} tokens from ${ragResult.reposSearched} repos`);
@@ -850,7 +851,7 @@ Respond with valid JSON in this exact structure:
           .replace('{{REPO_URL}}', session.repo_url || 'Not specified')
           .replace('{{SPEC_CARD}}', JSON.stringify(spec, null, 2))
           .replace('{{TECH_STACK}}', Object.keys(techStack).join(', ') || 'Unknown');
-        
+
         userContent = this.buildFeatureTicketsUserContent(session, spec);
 
       } catch (e) {
@@ -871,34 +872,34 @@ Respond with valid JSON in this exact structure:
     });
 
     if (!response.success) {
-      return { 
-        type: 'tickets', 
-        tickets: [], 
-        status: 'error', 
-        message: 'Failed to generate tickets.', 
-        error: response.error 
+      return {
+        type: 'tickets',
+        tickets: [],
+        status: 'error',
+        message: 'Failed to generate tickets.',
+        error: response.error
       };
     }
 
     const parsed = parseJsonResponse(response.content);
-    
+
     if (!parsed?.tickets || !Array.isArray(parsed.tickets)) {
-      return { 
-        type: 'tickets', 
-        tickets: [], 
-        status: 'parse_error', 
+      return {
+        type: 'tickets',
+        tickets: [],
+        status: 'parse_error',
         message: 'Could not parse tickets from response.',
-        raw: response.content 
+        raw: response.content
       };
     }
 
     // Create or get project for tickets
     let projectId = session.project_id;
-    
+
     if (!projectId) {
       // Create a new project for this session
       projectId = 'proj_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      
+
       await execute(`
         INSERT INTO projects (id, name, repo_url, tenant_id, hitl_session_id, description, status, type)
         VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
@@ -923,7 +924,7 @@ Respond with valid JSON in this exact structure:
 
     for (const ticket of parsed.tickets) {
       const ticketId = 'tkt_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      
+
       await execute(`
         INSERT INTO tickets (
           id, project_id, title, description, acceptance_criteria,
@@ -958,7 +959,7 @@ Respond with valid JSON in this exact structure:
 
     // Broadcast state change
     broadcast.sessionUpdate(session.id, 'building', 90);
-    
+
     // Broadcast tickets generated event
     broadcast.ticketsGenerated(session.id, {
       projectId,
@@ -1006,7 +1007,7 @@ Respond with valid JSON in this exact structure:
       '## Project Name',
       session.project_name || spec.title || 'Untitled Project',
       '',
-      '## Project Description', 
+      '## Project Description',
       session.description || spec.summary || 'No description',
       '',
       '## Approved Specification',
@@ -1048,20 +1049,20 @@ Respond with valid JSON in this exact structure:
   }
 
   async executeDecomposeTicket(session, context) {
-    return { 
-      type: 'decomposition', 
-      subtasks: [], 
+    return {
+      type: 'decomposition',
+      subtasks: [],
       status: 'not_implemented',
       message: 'Ticket decomposition placeholder - wire to Claude'
     };
   }
 
   async executeDiagnose(session, context) {
-    return { 
-      type: 'diagnosis', 
-      diagnosis: null, 
+    return {
+      type: 'diagnosis',
+      diagnosis: null,
       rootCause: null,
-      suggestions: [], 
+      suggestions: [],
       status: 'not_implemented',
       message: 'Diagnosis placeholder - wire to Claude'
     };
@@ -1088,7 +1089,7 @@ Respond with valid JSON in this exact structure:
 // Export singleton and class
 const dispatcher = new AIDispatcher();
 
-module.exports = { 
+module.exports = {
   AIDispatcher,
   dispatcher,
   AI_PERMISSIONS,

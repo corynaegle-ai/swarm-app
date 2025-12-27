@@ -12,7 +12,7 @@ function getApiKey() {
   if (process.env.ANTHROPIC_API_KEY) {
     return process.env.ANTHROPIC_API_KEY;
   }
-  
+
   // Try loading from secrets file
   try {
     const fs = require('fs');
@@ -23,7 +23,7 @@ function getApiKey() {
   } catch (err) {
     console.error('Failed to load API key from secrets:', err.message);
   }
-  
+
   throw new Error('ANTHROPIC_API_KEY not configured');
 }
 
@@ -51,7 +51,7 @@ function getClient() {
  */
 async function chat({ system, messages, model = 'claude-sonnet-4-20250514', maxTokens = 4096 }) {
   const anthropic = getClient();
-  
+
   try {
     const response = await anthropic.messages.create({
       model,

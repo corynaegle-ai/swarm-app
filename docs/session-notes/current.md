@@ -97,3 +97,42 @@ node apps/platform/tests/verify-mocks.js (deleted after verification)
 
 ## Session: December 25, 2024 - Sentinel Integration & Backlog Fix
 ...
+
+---
+
+## Session: December 27, 2024 - Generate Spec Button Fix
+
+### Status: ✅ COMPLETED
+
+---
+
+## Fix Summary
+
+### 1. "Generate Spec" Button Non-Functional
+**Problem**: The "Generate Spec" button on the DEV dashboard was not working (UI would reset instantly).
+**Root Cause**:
+- Frontend (`DesignSession.jsx`) allowed clicking "Generate Spec" in `clarifying` state.
+- Backend (`ai-dispatcher.js`) **blocked** the `generate_spec` action in `clarifying` state, returning a `blocked` status.
+- Frontend treated the `blocked` response as a generic failure and reset the UI.
+**Solution**:
+- Updated `apps/platform/services/ai-dispatcher.js` to explicitly allow `generate_spec` in `clarifying` state.
+- Verified fix by manually triggering the API on DEV.
+
+### 2. Missing Agent Activity Logs
+**Problem**: Activity logs for Verifier/Sentinel agent were missing from Dashboard (e.g., for `TKT-814ACEDC`).
+**Root Cause**:
+- `swarm-verifier` (Sentinel) service logged events only to a local SQLite database (`verification_attempts`) and did NOT call the Platform API (`/api/tickets/:id/activity`).
+- Dashboard relies on `ticket_events` table in Platform DB, which was empty for verifier actions.
+**Solution**:
+- Patched `/opt/swarm-verifier/server.js` on DEV.
+- Added `logActivity` helper function using Platform API.
+- Injected `logActivity` calls at start, phase completion/failure, and final verification key points.
+- Restarted `swarm-verifier` service.
+
+### 3. Rate Limit Removal
+**Problem**: User encountered "Too many requests" on Tickets/Kanban pages.
+**Root Cause**: Global `apiLimiter` (100 req/15min) was applied to `/api/tickets` and `/api/backlog`, which load heavy data for dashboards.
+**Solution**:
+- Updated `apps/platform/server.js` on DEV.
+- Removed `apiLimiter` middleware from `/api/tickets` and `/api/backlog` routes.
+- Restarted platform service.

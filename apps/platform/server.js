@@ -95,7 +95,7 @@ const devLimiter = rateLimit({
 app.use('/health', healthRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/vms', apiLimiter, vmRoutes);
-app.use('/api/tickets', apiLimiter, ticketRoutes);
+app.use('/api/tickets', ticketRoutes);
 app.use('/api/projects', apiLimiter, projectRoutes);
 app.use('/api/design-sessions', apiLimiter, designRoutes);
 app.use('/api/hitl', apiLimiter, hitlRoutes);
@@ -107,7 +107,7 @@ app.use('/api/repo', apiLimiter, repoRoutes);
 app.use('/api/agents', apiLimiter, agentsRoutes);
 app.use('/api/learning', apiLimiter, learningRoutes);
 app.use('/api/mcp', apiLimiter, mcpRoutes);
-app.use("/api/backlog", apiLimiter, backlogRoutes);
+app.use("/api/backlog", backlogRoutes);
 app.use('/api/registry', apiLimiter, registryRoutes);
 // Serve uploaded files with tenant isolation
 const { requireAuth } = require("./middleware/auth");

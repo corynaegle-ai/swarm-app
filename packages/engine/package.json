@@ -1,0 +1,26 @@
+{
+  "name": "swarm-engine",
+  "version": "1.0.0",
+  "description": "Swarm Execution Engine - Orchestrates workflow execution across Firecracker microVMs",
+  "type": "module",
+  "main": "lib/engine.js",
+  "bin": {
+    "swarm-engine": "./cli/swarm-engine.js"
+  },
+  "scripts": {
+    "start": "node cli/swarm-engine.js start",
+    "test": "node --test test/",
+    "lint": "eslint lib/ cli/"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "commander": "^12.0.0",
+    "chalk": "^5.3.0",
+    "yaml": "^2.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "author": "Neural",
+  "license": "MIT"
+}

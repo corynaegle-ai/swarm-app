@@ -146,7 +146,7 @@ async function logActivity(ticketId, category, message, metadata = {}) {
     // Only log if ticketId is valid
     if (!ticketId) return;
 
-    await httpRequest(`${CONFIG.apiUrl}/tickets/${ticketId}/activity`, {
+    await httpRequest(`${CONFIG.apiUrl}/api/tickets/${ticketId}/activity`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -590,7 +590,6 @@ async function cloneAndBranch(ticket) {
     }
   }
   repoUrl = repoUrl.replace('https://', `https://${CONFIG.githubToken}@`);
-  repoUrl = repoUrl.replace('https://', `https://${CONFIG.githubToken}@`);
   execGit(`git clone ${repoUrl} .`, repoDir);
   // We can't easily access ticket ID here without passing it, but logActivity expects it.
   // Assuming callers might log higher level git ops.
@@ -775,6 +774,7 @@ function emitProgress(ticketId, data) {
 // Main ticket processing with retry logic
 async function processTicket(ticket, projectSettings = {}) {
   log.info('Processing ticket', { ticketId: ticket.id, title: ticket.title });
+  await logActivity(ticket.id, 'ticket_claimed', `Claimed by ${CONFIG.agentId}`, { agent_id: CONFIG.agentId });
 
   let repoDir = null;
   let branchName = null;
@@ -819,8 +819,6 @@ async function processTicket(ticket, projectSettings = {}) {
     let lastResult = null;
     let lastValidationErrors = [];
     let currentAttempt = 0;
-
-    await logActivity(ticket.id, 'ticket_claimed', `Claimed by ${CONFIG.agentId}`, { agent_id: CONFIG.agentId });
 
     while (currentAttempt < maxAttempts) {
       currentAttempt++;

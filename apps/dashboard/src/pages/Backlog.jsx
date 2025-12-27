@@ -1,249 +1,387 @@
 import React, { useState, useEffect } from 'react';
-import { PlusIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
-import { useAuth } from '../hooks/useAuth';
-import { supabase } from '../lib/supabase';
-import TicketModal from '../components/TicketModal';
-import TicketCard from '../components/TicketCard';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Plus, Search, Filter, Calendar, User, Clock, AlertCircle } from 'lucide-react';
+import { useSupabase } from '@/hooks/useSupabase';
 
-const priorityColors = {
-  'High': 'text-red-400 bg-red-400/10 border-red-400/20',
-  'Medium': 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
-  'Low': 'text-green-400 bg-green-400/10 border-green-400/20'
-};
-
-const statusColors = {
-  'Open': 'text-blue-400 bg-blue-400/10 border-blue-400/20',
-  'In Progress': 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20',
-  'Done': 'text-green-400 bg-green-400/10 border-green-400/20',
-  'Closed': 'text-gray-400 bg-gray-400/10 border-gray-400/20'
-};
-
-export default function Backlog() {
-  const { user } = useAuth();
+const Backlog = () => {
+  const { supabase, user } = useSupabase();
   const [tickets, setTickets] = useState([]);
+  const [filteredTickets, setFilteredTickets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-  const [sortBy, setSortBy] = useState('created_at');
-  const [sortOrder, setSortOrder] = useState('desc');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterPriority, setFilterPriority] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
+  const [newTicket, setNewTicket] = useState({
+    title: '',
+    description: '',
+    priority: 'medium',
+    status: 'open',
+    type: 'feature'
+  });
 
   useEffect(() => {
-    if (user) {
-      fetchTickets();
-    }
-  }, [user, sortBy, sortOrder]);
+    fetchTickets();
+  }, [supabase]);
+
+  useEffect(() => {
+    filterTickets();
+  }, [tickets, searchTerm, statusFilter, priorityFilter]);
 
   const fetchTickets = async () => {
     try {
-      setLoading(true);
-      let query = supabase
+      const { data, error } = await supabase
         .from('tickets')
-        .select(`
-          *,
-          profiles:assigned_to(username),
-          creator:profiles!tickets_created_by_fkey(username)
-        `)
-        .eq('project_id', user.project_id);
-
-      // Apply sorting
-      query = query.order(sortBy, { ascending: sortOrder === 'asc' });
-
-      const { data, error } = await query;
+        .select('*')
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
       setTickets(data || []);
-    } catch (err) {
-      setError(err.message);
+    } catch (error) {
+      console.error('Error fetching tickets:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTicketCreated = () => {
-    fetchTickets();
-    setShowModal(false);
+  const filterTickets = () => {
+    let filtered = [...tickets];
+
+    if (searchTerm) {
+      filtered = filtered.filter(ticket =>
+        ticket.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        ticket.description.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(ticket => ticket.status === statusFilter);
+    }
+
+    if (priorityFilter !== 'all') {
+      filtered = filtered.filter(ticket => ticket.priority === priorityFilter);
+    }
+
+    setFilteredTickets(filtered);
   };
 
-  const handleTicketUpdated = () => {
-    fetchTickets();
-  };
+  const handleCreateTicket = async (e) => {
+    e.preventDefault();
+    try {
+      const { data, error } = await supabase
+        .from('tickets')
+        .insert([{
+          ...newTicket,
+          user_id: user?.id,
+          created_at: new Date().toISOString()
+        }])
+        .select();
 
-  const toggleSort = (field) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('desc');
+      if (error) throw error;
+      
+      setTickets(prev => [data[0], ...prev]);
+      setNewTicket({
+        title: '',
+        description: '',
+        priority: 'medium',
+        status: 'open',
+        type: 'feature'
+      });
+      setIsNewTicketOpen(false);
+    } catch (error) {
+      console.error('Error creating ticket:', error);
     }
   };
 
-  const filteredTickets = tickets.filter(ticket => {
-    if (filterStatus !== 'all' && ticket.status !== filterStatus) {
-      return false;
+  const getPriorityColor = (priority) => {
+    switch (priority) {
+      case 'high': return 'bg-red-100 text-red-800';
+      case 'medium': return 'bg-yellow-100 text-yellow-800';
+      case 'low': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
-    if (filterPriority !== 'all' && ticket.priority !== filterPriority) {
-      return false;
-    }
-    return true;
-  });
+  };
 
-  const getSortIcon = (field) => {
-    if (sortBy !== field) return null;
-    return sortOrder === 'asc' ? 
-      <ChevronUpIcon className="h-4 w-4" /> : 
-      <ChevronDownIcon className="h-4 w-4" />;
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'open': return 'bg-blue-100 text-blue-800';
+      case 'in_progress': return 'bg-yellow-100 text-yellow-800';
+      case 'completed': return 'bg-green-100 text-green-800';
+      case 'blocked': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getTypeIcon = (type) => {
+    switch (type) {
+      case 'bug': return <AlertCircle className="w-4 h-4" />;
+      case 'feature': return <Plus className="w-4 h-4" />;
+      default: return <Clock className="w-4 h-4" />;
+    }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="text-red-400 text-center p-4">
-        Error loading tickets: {error}
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-white">Backlog</h1>
-        <button
-          onClick={() => setShowModal(true)}
-          className="bg-gradient-to-r from-red-500 to-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all duration-200 hover:from-red-600 hover:to-red-700 hover:shadow-[0_0_20px_rgba(255,68,68,0.3)] hover:scale-105"
-        >
-          <PlusIcon className="h-5 w-5" />
-          New Idea
-        </button>
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Product Backlog</h1>
+          <p className="text-gray-600 mt-1">
+            Manage and track your product development tickets
+          </p>
+        </div>
+        
+        <Dialog open={isNewTicketOpen} onOpenChange={setIsNewTicketOpen}>
+          <DialogTrigger asChild>
+            <Button 
+              className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white transition-all duration-300 transform hover:scale-105 shadow-lg"
+              style={{
+                boxShadow: '0 4px 15px rgba(255, 68, 68, 0.25)'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.boxShadow = '0 8px 25px rgba(255, 68, 68, 0.35), 0 0 20px rgba(255, 68, 68, 0.3)';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.boxShadow = '0 4px 15px rgba(255, 68, 68, 0.25)';
+              }}
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              New Idea
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>Create New Ticket</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCreateTicket} className="space-y-4">
+              <div>
+                <Label htmlFor="title">Title</Label>
+                <Input
+                  id="title"
+                  value={newTicket.title}
+                  onChange={(e) => setNewTicket(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder="Enter ticket title"
+                  required
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={newTicket.description}
+                  onChange={(e) => setNewTicket(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Describe the ticket details"
+                  rows={4}
+                />
+              </div>
+              
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="priority">Priority</Label>
+                  <Select value={newTicket.priority} onValueChange={(value) => setNewTicket(prev => ({ ...prev, priority: value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <Label htmlFor="status">Status</Label>
+                  <Select value={newTicket.status} onValueChange={(value) => setNewTicket(prev => ({ ...prev, status: value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="open">Open</SelectItem>
+                      <SelectItem value="in_progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="blocked">Blocked</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div>
+                  <Label htmlFor="type">Type</Label>
+                  <Select value={newTicket.type} onValueChange={(value) => setNewTicket(prev => ({ ...prev, type: value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="feature">Feature</SelectItem>
+                      <SelectItem value="bug">Bug</SelectItem>
+                      <SelectItem value="improvement">Improvement</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div className="flex justify-end space-x-2 pt-4">
+                <Button type="button" variant="outline" onClick={() => setIsNewTicketOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit">
+                  Create Ticket
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Filters */}
-      <div className="bg-gray-800 rounded-lg p-4 mb-6">
-        <div className="flex flex-wrap gap-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-400">Status:</label>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="bg-gray-700 text-white rounded px-3 py-1 text-sm border border-gray-600 focus:border-cyan-400 focus:outline-none"
-            >
-              <option value="all">All</option>
-              <option value="Open">Open</option>
-              <option value="In Progress">In Progress</option>
-              <option value="Done">Done</option>
-              <option value="Closed">Closed</option>
-            </select>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-400">Priority:</label>
-            <select
-              value={filterPriority}
-              onChange={(e) => setFilterPriority(e.target.value)}
-              className="bg-gray-700 text-white rounded px-3 py-1 text-sm border border-gray-600 focus:border-cyan-400 focus:outline-none"
-            >
-              <option value="all">All</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
+      <div className="flex flex-col sm:flex-row gap-4 p-4 bg-white rounded-lg shadow">
+        <div className="flex-1">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search tickets..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
           </div>
         </div>
+        
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-full sm:w-[180px]">
+            <Filter className="w-4 h-4 mr-2" />
+            <SelectValue placeholder="Filter by status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="open">Open</SelectItem>
+            <SelectItem value="in_progress">In Progress</SelectItem>
+            <SelectItem value="completed">Completed</SelectItem>
+            <SelectItem value="blocked">Blocked</SelectItem>
+          </SelectContent>
+        </Select>
+        
+        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+          <SelectTrigger className="w-full sm:w-[180px]">
+            <Filter className="w-4 h-4 mr-2" />
+            <SelectValue placeholder="Filter by priority" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Priorities</SelectItem>
+            <SelectItem value="high">High</SelectItem>
+            <SelectItem value="medium">Medium</SelectItem>
+            <SelectItem value="low">Low</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Tickets Table */}
-      <div className="bg-gray-800 rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-900">
-              <tr>
-                <th className="text-left p-4 text-gray-300 font-medium">
-                  <button
-                    onClick={() => toggleSort('id')}
-                    className="flex items-center gap-1 hover:text-white transition-colors"
-                  >
-                    ID {getSortIcon('id')}
-                  </button>
-                </th>
-                <th className="text-left p-4 text-gray-300 font-medium">
-                  <button
-                    onClick={() => toggleSort('title')}
-                    className="flex items-center gap-1 hover:text-white transition-colors"
-                  >
-                    Title {getSortIcon('title')}
-                  </button>
-                </th>
-                <th className="text-left p-4 text-gray-300 font-medium">
-                  <button
-                    onClick={() => toggleSort('status')}
-                    className="flex items-center gap-1 hover:text-white transition-colors"
-                  >
-                    Status {getSortIcon('status')}
-                  </button>
-                </th>
-                <th className="text-left p-4 text-gray-300 font-medium">
-                  <button
-                    onClick={() => toggleSort('priority')}
-                    className="flex items-center gap-1 hover:text-white transition-colors"
-                  >
-                    Priority {getSortIcon('priority')}
-                  </button>
-                </th>
-                <th className="text-left p-4 text-gray-300 font-medium">
-                  <button
-                    onClick={() => toggleSort('assigned_to')}
-                    className="flex items-center gap-1 hover:text-white transition-colors"
-                  >
-                    Assignee {getSortIcon('assigned_to')}
-                  </button>
-                </th>
-                <th className="text-left p-4 text-gray-300 font-medium">
-                  <button
-                    onClick={() => toggleSort('created_at')}
-                    className="flex items-center gap-1 hover:text-white transition-colors"
-                  >
-                    Created {getSortIcon('created_at')}
-                  </button>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTickets.map((ticket) => (
-                <TicketCard
-                  key={ticket.id}
-                  ticket={ticket}
-                  onUpdate={handleTicketUpdated}
-                  priorityColors={priorityColors}
-                  statusColors={statusColors}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {filteredTickets.length === 0 && (
-          <div className="text-center py-12 text-gray-400">
-            <p>No tickets found.</p>
-            <p className="text-sm mt-2">Create your first ticket to get started!</p>
+      {/* Tickets Grid */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {filteredTickets.length === 0 ? (
+          <div className="col-span-full text-center py-8 text-gray-500">
+            {tickets.length === 0 ? 'No tickets found. Create your first ticket!' : 'No tickets match your filters.'}
           </div>
+        ) : (
+          filteredTickets.map((ticket) => (
+            <Card key={ticket.id} className="hover:shadow-lg transition-shadow duration-200">
+              <CardContent className="p-6">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center space-x-2">
+                    {getTypeIcon(ticket.type)}
+                    <Badge variant="outline" className={getPriorityColor(ticket.priority)}>
+                      {ticket.priority}
+                    </Badge>
+                  </div>
+                  <Badge className={getStatusColor(ticket.status)}>
+                    {ticket.status.replace('_', ' ')}
+                  </Badge>
+                </div>
+                
+                <h3 className="font-semibold text-lg mb-2 text-gray-900">
+                  {ticket.title}
+                </h3>
+                
+                {ticket.description && (
+                  <p className="text-gray-600 text-sm mb-4 line-clamp-3">
+                    {ticket.description}
+                  </p>
+                )}
+                
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <div className="flex items-center space-x-1">
+                    <Calendar className="w-3 h-3" />
+                    <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
+                  </div>
+                  
+                  {ticket.user_id && (
+                    <div className="flex items-center space-x-1">
+                      <User className="w-3 h-3" />
+                      <span>Ticket #{ticket.id?.toString().slice(-4) || 'N/A'}</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))
         )}
       </div>
 
-      {showModal && (
-        <TicketModal
-          isOpen={showModal}
-          onClose={() => setShowModal(false)}
-          onTicketCreated={handleTicketCreated}
-        />
-      )}
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-blue-600">
+              {tickets.filter(t => t.status === 'open').length}
+            </div>
+            <div className="text-sm text-gray-600">Open</div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-yellow-600">
+              {tickets.filter(t => t.status === 'in_progress').length}
+            </div>
+            <div className="text-sm text-gray-600">In Progress</div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-green-600">
+              {tickets.filter(t => t.status === 'completed').length}
+            </div>
+            <div className="text-sm text-gray-600">Completed</div>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-red-600">
+              {tickets.filter(t => t.status === 'blocked').length}
+            </div>
+            <div className="text-sm text-gray-600">Blocked</div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
-}
+};
+
+export default Backlog;

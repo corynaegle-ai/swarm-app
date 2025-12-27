@@ -204,7 +204,12 @@ app.post('/verify', async (req, res) => {
         result.duration_ms = Date.now() - startTime;
 
         logVerification(db, ticket_id, attemptNum, branch_name, commitSha, result);
-        logActivity(ticket_id, 'verification_failed', 'Static analysis failed', { phase: 'static', errors: staticResult.checks.filter(c => !c.passed).length });
+        logActivity(ticket_id, 'verification_failed', 'Static analysis failed', {
+          phase: 'static',
+          errors: staticResult.checks.filter(c => !c.passed).length,
+          status: 'failure',
+          feedback_for_agent: result.feedback_for_agent
+        });
         return res.json(result);
       }
 
@@ -231,7 +236,12 @@ app.post('/verify', async (req, res) => {
         result.duration_ms = Date.now() - startTime;
 
         logVerification(db, ticket_id, attemptNum, branch_name, commitSha, result);
-        logActivity(ticket_id, 'verification_failed', 'Automated checks failed', { phase: 'automated', errors: automatedResult.checks.filter(c => !c.passed).length });
+        logActivity(ticket_id, 'verification_failed', 'Automated checks failed', {
+          phase: 'automated',
+          errors: automatedResult.checks.filter(c => !c.passed).length,
+          status: 'failure',
+          feedback_for_agent: result.feedback_for_agent
+        });
         return res.json(result);
       }
 
@@ -272,7 +282,9 @@ app.post('/verify', async (req, res) => {
         logActivity(ticket_id, 'verification_failed', 'Sentinel AI review failed', {
           phase: 'sentinel',
           decision: sentinelResult.decision,
-          score: sentinelResult.score
+          score: sentinelResult.score,
+          status: 'failure',
+          feedback_for_agent: result.feedback_for_agent
         });
         return res.json(result);
       }
@@ -290,7 +302,10 @@ app.post('/verify', async (req, res) => {
     result.duration_ms = Date.now() - startTime;
 
     logVerification(db, ticket_id, attemptNum, branch_name, commitSha, result);
-    logActivity(ticket_id, 'verification_passed', 'All verification phases passed', { duration_ms: result.duration_ms });
+    logActivity(ticket_id, 'verification_passed', 'All verification phases passed', {
+      duration_ms: result.duration_ms,
+      status: 'success'
+    });
 
     console.log(`[${ticket_id}] ✅ Verification passed in ${result.duration_ms}ms`);
     res.json(result);
@@ -302,7 +317,10 @@ app.post('/verify', async (req, res) => {
     result.duration_ms = Date.now() - startTime;
 
     logVerification(db, ticket_id, attemptNum, branch_name, null, result);
-    logActivity(ticket_id, 'verification_error', `Verification process error: ${err.message}`, { error: err.message });
+    logActivity(ticket_id, 'verification_error', `Verification process error: ${err.message}`, {
+      error: err.message,
+      status: 'error'
+    });
     res.status(500).json(result);
   }
 });

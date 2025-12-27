@@ -84,7 +84,7 @@ function formatTimestamp(isoString) {
   const diffSecs = Math.floor(diffMs / 1000);
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
-  
+
   if (diffSecs < 10) return 'just now';
   if (diffSecs < 60) return `${diffSecs}s ago`;
   if (diffMins < 60) return `${diffMins}m ago`;
@@ -109,7 +109,7 @@ function ActivityEntry({ entry, isNew }) {
   const hasMetadata = entry.metadata && Object.keys(entry.metadata).length > 0;
 
   return (
-    <div 
+    <div
       className={`activity-entry ${isNew ? 'activity-entry-new' : ''}`}
       style={{ '--category-color': config.color, '--category-bg': config.bg }}
     >
@@ -117,7 +117,7 @@ function ActivityEntry({ entry, isNew }) {
         <div className="activity-icon" style={{ color: config.color, background: config.bg }}>
           <Icon size={16} />
         </div>
-        
+
         <div className="activity-content">
           <div className="activity-header">
             <span className="activity-category" style={{ color: config.color }}>
@@ -144,14 +144,55 @@ function ActivityEntry({ entry, isNew }) {
 
       {expanded && hasMetadata && (
         <div className="activity-metadata">
-          {Object.entries(entry.metadata).map(([key, value]) => (
-            <div key={key} className="metadata-item">
-              <span className="metadata-key">{key}:</span>
-              <span className="metadata-value">
-                {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-              </span>
+          {/* Generated Code Display */}
+          {entry.metadata.generated_code && (
+            <div className="metadata-section">
+              <div className="metadata-label">Generated Code</div>
+              <pre className="metadata-code-block">
+                <code>{entry.metadata.generated_code}</code>
+              </pre>
             </div>
-          ))}
+          )}
+
+          {/* Verification Results Display */}
+          {(entry.metadata.status || entry.metadata.decision) && (
+            <div className="metadata-section">
+              <div className="metadata-label">Verification Result</div>
+              <div className={`verification-badge ${(entry.metadata.status === 'success' || entry.metadata.decision === 'approve')
+                  ? 'verification-success'
+                  : 'verification-failure'
+                }`}>
+                {entry.metadata.status || entry.metadata.decision}
+              </div>
+            </div>
+          )}
+
+          {/* Verification Feedback/Reasons */}
+          {entry.metadata.feedback_for_agent && (
+            <div className="metadata-section">
+              <div className="metadata-label">Rejection Reasons</div>
+              <ul className="feedback-list">
+                {Array.isArray(entry.metadata.feedback_for_agent)
+                  ? entry.metadata.feedback_for_agent.map((item, i) => (
+                    <li key={i}>{typeof item === 'object' ? item.message || JSON.stringify(item) : item}</li>
+                  ))
+                  : <li>{JSON.stringify(entry.metadata.feedback_for_agent)}</li>
+                }
+              </ul>
+            </div>
+          )}
+
+          {/* Default Metadata Rendering (excluding handled keys) */}
+          {Object.entries(entry.metadata)
+            .filter(([key]) => !['generated_code', 'status', 'decision', 'feedback_for_agent'].includes(key))
+            .map(([key, value]) => (
+              <div key={key} className="metadata-item">
+                <span className="metadata-key">{key}:</span>
+                <span className="metadata-value">
+                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                </span>
+              </div>
+            ))}
         </div>
       )}
     </div>
@@ -188,7 +229,7 @@ export default function ActivityTimeline({
       const newEntries = activity.slice(prevActivityLengthRef.current);
       const newIds = new Set(newEntries.map(e => `${e.timestamp}-${e.category}`));
       setNewEntryIds(newIds);
-      
+
       // Clear "new" status after animation
       setTimeout(() => setNewEntryIds(new Set()), 2000);
     }

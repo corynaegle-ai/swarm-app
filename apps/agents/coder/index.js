@@ -839,9 +839,15 @@ async function processTicket(ticket, projectSettings = {}) {
           result = await generateCodeWithRetry(ticket, heartbeatFn, projectSettings, lastResult, lastValidationErrors, existingFiles);
         }
 
+        // Create a summary of generated code for the log
+        const generatedCodePreview = result.files
+          .map(f => `// File: ${f.path}\n${f.content}`)
+          .join('\n\n');
+
         await logActivity(ticket.id, 'code_generation', `Generation complete`, {
           files_generated: result.files.length,
-          duration_ms: Date.now() - attemptStart
+          duration_ms: Date.now() - attemptStart,
+          generated_code: generatedCodePreview // Inject code for dashboard display
         });
 
         inputTokens += result.usage?.inputTokens || 0;

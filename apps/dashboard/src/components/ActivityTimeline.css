@@ -114,41 +114,31 @@
 }
 
 @keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateX(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 
 @keyframes glow {
-  0% {
-    box-shadow: 0 0 8px var(--category-color);
-  }
-  100% {
-    box-shadow: none;
-  }
+  0% { box-shadow: 0 0 0 rgba(0, 212, 255, 0); }
+  50% { box-shadow: 0 0 10px rgba(0, 212, 255, 0.3); }
+  100% { box-shadow: 0 0 0 rgba(0, 212, 255, 0); }
 }
 
 .activity-entry-main {
   display: flex;
-  align-items: flex-start;
   gap: 0.75rem;
   padding: 0.75rem;
   cursor: pointer;
 }
 
 .activity-icon {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .activity-content {
@@ -159,7 +149,6 @@
 .activity-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   margin-bottom: 0.25rem;
 }
 
@@ -206,9 +195,10 @@
   background: rgba(0, 0, 0, 0.3);
   padding: 0.75rem;
   margin: 0 0.75rem 0.75rem 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   font-family: 'Monaco', 'Menlo', monospace;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
 }
 
 .metadata-item {
@@ -229,6 +219,65 @@
 .metadata-value {
   color: #00d4ff;
   word-break: break-all;
+}
+
+/* Enhanced Metadata Styles */
+.metadata-section {
+  margin-bottom: 0.75rem;
+}
+
+.metadata-label {
+  font-weight: 600;
+  color: #9ca3af;
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.metadata-code-block {
+  background: #111827;
+  padding: 0.75rem;
+  border-radius: 0.375rem;
+  overflow-x: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  color: #e5e7eb;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: pre-wrap; /* Preserve whitespace but wrap lines */
+  word-break: break-all;
+}
+
+.verification-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.verification-success {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.verification-failure {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.feedback-list {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin: 0;
+  color: #e5e7eb;
+}
+
+.feedback-list li {
+  margin-bottom: 0.25rem;
 }
 
 /* Empty, loading, error states */

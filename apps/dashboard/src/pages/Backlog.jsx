@@ -1,110 +1,95 @@
-import React, { useState } from 'react';
-import { Button } from '../components/ui/Button';
-import { Dialog, DialogContent, DialogTrigger, DialogTitle } from '../components/ui/Dialog';
-import { Input } from '../components/ui/Input';
-import { Card } from '../components/ui/Card';
+import React, { useState, useEffect } from 'react';
+import { Plus } from 'lucide-react';
+import TicketCard from '../components/TicketCard';
+import IdeaModal from '../components/IdeaModal';
+import { getTickets } from '../services/api';
 
-export default function Backlog() {
-  const [isNewTicketOpen, setIsNewTicketOpen] = useState(false);
-  const [ticketTitle, setTicketTitle] = useState('');
-  const [ticketDescription, setTicketDescription] = useState('');
-  const [tickets, setTickets] = useState([
-    {
-      id: 'TKT-001',
-      title: 'Sample Ticket',
-      description: 'This is a sample ticket',
-      status: 'backlog',
-      priority: 'medium'
-    }
-  ]);
+const Backlog = () => {
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showIdeaModal, setShowIdeaModal] = useState(false);
 
-  const handleCreateTicket = () => {
-    if (ticketTitle.trim()) {
-      const newTicket = {
-        id: `TKT-${Date.now()}`,
-        title: ticketTitle,
-        description: ticketDescription,
-        status: 'backlog',
-        priority: 'medium'
-      };
-      setTickets([...tickets, newTicket]);
-      setTicketTitle('');
-      setTicketDescription('');
-      setIsNewTicketOpen(false);
-    }
+  useEffect(() => {
+    const fetchTickets = async () => {
+      try {
+        const data = await getTickets();
+        setTickets(data);
+      } catch (err) {
+        setError('Failed to fetch tickets');
+        console.error('Error fetching tickets:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTickets();
+  }, []);
+
+  const handleIdeaSubmit = (ideaData) => {
+    // Handle new idea submission
+    console.log('New idea submitted:', ideaData);
+    setShowIdeaModal(false);
+    // Refresh tickets or add new ticket to state
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-red-600 text-xl">{error}</div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-900">Backlog</h1>
-        <Dialog open={isNewTicketOpen} onOpenChange={setIsNewTicketOpen}>
-          <DialogTrigger asChild>
-            <Button 
-              className="
-                bg-gradient-to-r from-red-500 to-red-600 
-                hover:from-red-600 hover:to-red-700 
-                text-white font-medium px-6 py-2 rounded-lg 
-                transition-all duration-200 
-                hover:shadow-lg hover:shadow-red-500/30
-                transform hover:scale-105
-              "
-            >
-              + New Idea
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogTitle>Create New Ticket</DialogTitle>
-            <div className="space-y-4 mt-4">
-              <Input
-                placeholder="Ticket title"
-                value={ticketTitle}
-                onChange={(e) => setTicketTitle(e.target.value)}
-              />
-              <textarea
-                className="w-full p-3 border border-gray-300 rounded-md resize-none"
-                placeholder="Ticket description"
-                rows={4}
-                value={ticketDescription}
-                onChange={(e) => setTicketDescription(e.target.value)}
-              />
-              <div className="flex gap-2 justify-end">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setIsNewTicketOpen(false)}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={handleCreateTicket}>
-                  Create Ticket
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <button
+          onClick={() => setShowIdeaModal(true)}
+          className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center gap-2 transition-all duration-300 hover:shadow-lg hover:shadow-red-500/30 transform hover:scale-105"
+        >
+          <Plus size={20} />
+          New Idea
+        </button>
       </div>
 
-      <div className="grid gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {tickets.map((ticket) => (
-          <Card key={ticket.id} className="p-4">
-            <div className="flex justify-between items-start">
-              <div>
-                <h3 className="font-semibold text-lg">{ticket.title}</h3>
-                <p className="text-gray-600 mt-1">{ticket.description}</p>
-                <div className="flex gap-2 mt-2">
-                  <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
-                    {ticket.status}
-                  </span>
-                  <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded">
-                    {ticket.priority}
-                  </span>
-                </div>
-              </div>
-              <span className="text-sm text-gray-500">{ticket.id}</span>
-            </div>
-          </Card>
+          <TicketCard key={ticket.id} ticket={ticket} />
         ))}
       </div>
+
+      {tickets.length === 0 && (
+        <div className="text-center py-12">
+          <div className="text-gray-500 text-lg mb-4">No tickets in backlog</div>
+          <button
+            onClick={() => setShowIdeaModal(true)}
+            className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center gap-2 mx-auto transition-all duration-300 hover:shadow-lg hover:shadow-red-500/30 transform hover:scale-105"
+          >
+            <Plus size={20} />
+            Create Your First Idea
+          </button>
+        </div>
+      );
+
+      {showIdeaModal && (
+        <IdeaModal
+          isOpen={showIdeaModal}
+          onClose={() => setShowIdeaModal(false)}
+          onSubmit={handleIdeaSubmit}
+        />
+      )}
     </div>
   );
-}
+};
+
+export default Backlog;

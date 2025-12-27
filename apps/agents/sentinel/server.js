@@ -10,7 +10,20 @@
 
 const express = require('express');
 const cors = require('cors');
-const config = require('./config');
+let config;
+try {
+  config = require('./config');
+} catch (e) {
+  console.warn('Failed to load ./config, using defaults:', e.message);
+  config = {
+    PORT: 3006,
+    REPOS_BASE_PATH: '/tmp/swarm-sentinel-repos',
+    DB_PATH: __dirname + '/verification.db',
+    AGENT_ID: 'sentinel-agent-01',
+    TICKET_API_URL: 'http://localhost:3002',
+    AGENT_SERVICE_KEY: 'agent-internal-key-dev'
+  };
+}
 const git = require('./lib/git');
 const staticPhase = require('./lib/phases/static');
 const automatedPhase = require('./lib/phases/automated');

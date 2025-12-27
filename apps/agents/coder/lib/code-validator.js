@@ -24,18 +24,18 @@ try {
  */
 async function validateSyntax(files) {
   const errors = [];
-  
+
   for (const file of files) {
     // Skip non-JS/TS files
     if (!file.path.match(/\.(js|jsx|ts|tsx|mjs|cjs)$/i)) {
       continue;
     }
-    
+
     // Skip TypeScript for now - let validateTypes handle it
     if (file.path.match(/\.tsx?$/i)) {
       continue;
     }
-    
+
     try {
       if (acorn) {
         // Use acorn for fast in-memory parsing
@@ -47,12 +47,17 @@ async function validateSyntax(files) {
         });
       } else {
         // Fallback: write temp file and use Node --check
+        // NodeJS check cannot handle JSX or non-standard syntax
+        if (file.path.match(/\.jsx$/i)) {
+          return; // Skip JSX validation in fallback mode
+        }
+
         const tmpPath = `/tmp/syntax-check-${Date.now()}-${path.basename(file.path)}`;
         fs.writeFileSync(tmpPath, file.content);
         try {
           execSync(`node --check "${tmpPath}"`, { stdio: 'pipe' });
         } finally {
-          try { fs.unlinkSync(tmpPath); } catch {}
+          try { fs.unlinkSync(tmpPath); } catch { }
         }
       }
     } catch (err) {
@@ -66,7 +71,7 @@ async function validateSyntax(files) {
       });
     }
   }
-  
+
   return errors;
 }
 
@@ -78,34 +83,34 @@ async function validateSyntax(files) {
  */
 async function validateLint(repoDir, changedFiles) {
   const errors = [];
-  
+
   // Filter to JS/JSX files only (ESLint doesn't handle TS without config)
   const jsFiles = changedFiles.filter(f => f.match(/\.(js|jsx|mjs|cjs)$/i));
   if (jsFiles.length === 0) return errors;
-  
+
   // Check if eslint is available
   const eslintPath = path.join(repoDir, 'node_modules', '.bin', 'eslint');
   const hasLocalEslint = fs.existsSync(eslintPath);
-  
+
   // Check if there's an eslint config
   const hasConfig = fs.existsSync(path.join(repoDir, '.eslintrc.js')) ||
-                    fs.existsSync(path.join(repoDir, '.eslintrc.json')) ||
-                    fs.existsSync(path.join(repoDir, '.eslintrc.yml')) ||
-                    fs.existsSync(path.join(repoDir, 'eslint.config.js')) ||
-                    fs.existsSync(path.join(repoDir, 'eslint.config.mjs'));
-  
+    fs.existsSync(path.join(repoDir, '.eslintrc.json')) ||
+    fs.existsSync(path.join(repoDir, '.eslintrc.yml')) ||
+    fs.existsSync(path.join(repoDir, 'eslint.config.js')) ||
+    fs.existsSync(path.join(repoDir, 'eslint.config.mjs'));
+
   if (!hasLocalEslint || !hasConfig) {
     // No ESLint available - skip lint validation
     return errors;
   }
-  
+
   try {
     const filePaths = jsFiles.map(f => path.join(repoDir, f)).join(' ');
     const result = execSync(
       `cd "${repoDir}" && ./node_modules/.bin/eslint --format json ${filePaths}`,
       { stdio: 'pipe', timeout: 30000 }
     );
-    
+
     // ESLint returns exit 0 for no errors
     return errors;
   } catch (err) {
@@ -138,7 +143,7 @@ async function validateLint(repoDir, changedFiles) {
       }
     }
   }
-  
+
   return errors;
 }
 
@@ -149,19 +154,19 @@ async function validateLint(repoDir, changedFiles) {
  */
 async function validateTypes(repoDir) {
   const errors = [];
-  
+
   // Check if TypeScript is configured
   const tsconfigPath = path.join(repoDir, 'tsconfig.json');
   if (!fs.existsSync(tsconfigPath)) {
     return errors; // No TypeScript, skip
   }
-  
+
   // Check if tsc is available
   const tscPath = path.join(repoDir, 'node_modules', '.bin', 'tsc');
   if (!fs.existsSync(tscPath)) {
     return errors; // No TypeScript compiler
   }
-  
+
   try {
     execSync(
       `cd "${repoDir}" && ./node_modules/.bin/tsc --noEmit`,
@@ -171,7 +176,7 @@ async function validateTypes(repoDir) {
   } catch (err) {
     // TypeScript outputs errors to stdout
     const output = (err.stdout?.toString() || '') + (err.stderr?.toString() || '');
-    
+
     // Parse TypeScript error format: file(line,col): error TSxxxx: message
     const errorRegex = /^(.+?)\((\d+),(\d+)\):\s*(error|warning)\s+TS\d+:\s*(.+)$/gm;
     let match;
@@ -186,7 +191,7 @@ async function validateTypes(repoDir) {
         });
       }
     }
-    
+
     // If no matches but there was an error, add generic error
     if (errors.length === 0 && output.includes('error')) {
       errors.push({
@@ -198,7 +203,7 @@ async function validateTypes(repoDir) {
       });
     }
   }
-  
+
   return errors;
 }
 
@@ -212,23 +217,23 @@ async function validateTypes(repoDir) {
 async function validateAll(repoDir, files, level = 'standard') {
   const allErrors = [];
   const changedFiles = files.map(f => f.path);
-  
+
   // Always run syntax validation
   const syntaxErrors = await validateSyntax(files);
   allErrors.push(...syntaxErrors);
-  
+
   // Standard and strict levels include lint
   if (level === 'standard' || level === 'strict') {
     const lintErrors = await validateLint(repoDir, changedFiles);
     allErrors.push(...lintErrors);
   }
-  
+
   // Strict level includes type checking
   if (level === 'strict') {
     const typeErrors = await validateTypes(repoDir);
     allErrors.push(...typeErrors);
   }
-  
+
   return {
     passed: allErrors.length === 0,
     errors: allErrors
@@ -242,9 +247,9 @@ async function validateAll(repoDir, files, level = 'standard') {
  */
 function formatErrorsForPrompt(errors) {
   if (errors.length === 0) return '';
-  
+
   const lines = ['## Validation Errors to Fix\n'];
-  
+
   // Group by file
   const byFile = {};
   for (const err of errors) {
@@ -252,7 +257,7 @@ function formatErrorsForPrompt(errors) {
     if (!byFile[key]) byFile[key] = [];
     byFile[key].push(err);
   }
-  
+
   for (const [file, fileErrors] of Object.entries(byFile)) {
     lines.push(`### ${file}\n`);
     for (const err of fileErrors) {
@@ -260,7 +265,7 @@ function formatErrorsForPrompt(errors) {
     }
     lines.push('');
   }
-  
+
   return lines.join('\n');
 }
 

@@ -266,17 +266,34 @@ router.post('/complete', async (req, res) => {
       timestamp: new Date().toISOString()
     });
 
+
+
+    // Only transition to in_review if we actually have a PR (success)
+    // If failed, we might want to set to 'failed' or leave as is?
+    // For now, let's respect that the Agent might call complete with success=false
+    // But we definitely shouldn't trigger verification or set in_review if it failed.
+
+    let newState = 'in_review';
+    if (!pr_url) {
+      newState = 'in_progress'; // Keep in progress or move to failed? 
+      // If agent says success=false, likely it will retry or has given up.
+      // But for now, let's just NOT set in_review if no PR.
+      console.log('[complete] No PR URL, skipping state transition to in_review');
+      return res.json({ success: false, message: 'No PR URL provided, skipping completion' });
+    }
+
     await execute(`
       UPDATE tickets 
-      SET state = 'in_review', 
+      SET state = $1, 
           completed_at = NOW(),
-          pr_url = $1,
-          branch_name = $2,
-          files_involved = $3,
-          outputs = $4,
+          pr_url = $2,
+          branch_name = $3,
+          files_involved = $4,
+          outputs = $5,
           verification_status = 'pending'
-      WHERE id = $5
+      WHERE id = $6
     `, [
+      newState,
       pr_url || null,
       branch_name || null,
       files_involved ? JSON.stringify(files_involved) : null,

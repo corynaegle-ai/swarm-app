@@ -7,9 +7,22 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:3002', // UPDATED: Match ecosystem.config.js PORT
         changeOrigin: true,
       }
     }
+  },
+  preview: { // Preview mode also needs this if running vite preview
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3002',
+        changeOrigin: true,
+      }
+    },
+    allowedHosts: [
+      'dashboard.dev.swarmstack.net',
+      'dashboard.swarmstack.net'
+    ]
   }
 })

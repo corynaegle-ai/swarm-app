@@ -11,6 +11,16 @@ import {
 } from 'lucide-react';
 import './Backlog.css';
 
+// Red gradient button styles
+const redButtonStyles = {
+  background: 'linear-gradient(135deg, #ff4444, #cc0000)',
+  transition: 'all 0.3s ease',
+  ':hover': {
+    boxShadow: '0 8px 32px rgba(255, 68, 68, 0.3), 0 4px 16px rgba(255, 68, 68, 0.2)',
+    transform: 'translateY(-2px)'
+  }
+};
+
 const STATES = {
   draft: { label: 'Draft', color: '#71717a', bg: 'rgba(113, 113, 122, 0.15)' },
   chatting: { label: 'Chatting', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)' },

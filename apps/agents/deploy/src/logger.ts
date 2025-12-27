@@ -22,8 +22,8 @@ export const logger = winston.createLogger({
         })
       )
     }),
-    new winston.transports.File({ 
-      filename: '/opt/swarm-deploy/logs/deploy-agent.log',
+    new winston.transports.File({
+      filename: process.env.LOG_PATH || '/opt/swarm-app/apps/agents/deploy/logs/deploy-agent.log',
       maxsize: 10 * 1024 * 1024,  // 10MB
       maxFiles: 5
     })

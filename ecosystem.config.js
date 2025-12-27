@@ -59,7 +59,11 @@ module.exports = {
         {
             name: 'deploy-agent',
             cwd: '/opt/swarm-app/apps/agents/deploy',
-            script: 'dist/index.js'
+            script: 'dist/index.js',
+            env: {
+                MANIFESTS_DIR: '/opt/swarm-app/apps/agents/deploy/manifests',
+                DB_PATH: '/opt/swarm-app/apps/agents/deploy/data/deployments.db'
+            }
         },
         {
             name: 'swarm-rag',

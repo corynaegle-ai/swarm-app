@@ -545,7 +545,7 @@ ${errorContext}
 
 If any errors above mention "PATCH FAILED", it means your surgical patches could not be applied (likely due to mismatched search text).
 **DO NOT ATTEMPT TO PATCH THESE FILES AGAIN.**
-Instead, you MUST regenerate the **FULL CONTENT** of those specific files and use `action: "create"` to overwrite them completely.
+Instead, you MUST regenerate the **FULL CONTENT** of those specific files and use \`action: "create"\` to overwrite them completely.
 This is the only way to fix the state.
 
 ## Instructions for Retry

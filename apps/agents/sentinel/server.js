@@ -44,6 +44,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+console.log('--- SENTINEL CONFIG DEBUG ---');
+console.log('PG_HOST:', config.PG_HOST);
+console.log('PG_USER:', config.PG_USER);
+console.log('PG_DB:', config.PG_DB);
+console.log('PG_PASSWORD:', config.PG_PASSWORD ? '******' : 'UNDEFINED/NULL');
+console.log('GITHUB_TOKEN:', config.GITHUB_TOKEN ? '******' : 'UNDEFINED');
+console.log('-----------------------------');
+
 // Ensure repos directory exists
 if (!fs.existsSync(config.REPOS_BASE_PATH)) {
   fs.mkdirSync(config.REPOS_BASE_PATH, { recursive: true });

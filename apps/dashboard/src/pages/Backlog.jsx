@@ -9,7 +9,7 @@ const Backlog = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const { tickets, loading, error, fetchTickets, createTicket, updateTicket, deleteTicket } = useTickets();
+  const { tickets, loading, error, listTickets: fetchTickets, createTicket, updateTicket, deleteTicket } = useTickets();
   const { showToast } = useToast();
 
   useEffect(() => {

@@ -1126,14 +1126,14 @@ async function processTicket(ticket, projectSettings = {}) {
         const writeResult = writeFilesDetailed(repoDir, result.files);
         const filesWritten = writeResult.written;
 
-        // CHECK FOR PATCH FAILURES (Smart Fallback)
+        // CHECK FOR PATCH FAILURES (Smart Fallback 2.0)
         if (writeResult.failed.length > 0) {
-          log.warn('Write/Patch failures detected - triggering fallback retry', { failedFiles: writeResult.failed });
+          log.warn('Write/Patch failures detected - triggering SMART FALLBACK', { failedFiles: writeResult.failed });
 
           const patchErrors = writeResult.failed.map(f => ({
             file: f.path,
             line: 1,
-            message: `PATCH FAILED: ${f.error}. Critical error. STOP using 'modify' patches for this file. You MUST rewrite the ENTIRE file using action: "create" with the full content.`
+            message: `SMART FALLBACK ACTIVATED: Surgical patching failed for this file. Error: ${f.error}\n\nCOMMAND: You must REWRITE the ENTIRE content of '${f.path}' using actions: "create". Do not attempt to patch it again.`
           }));
 
           // Inject these as validation errors
@@ -1146,9 +1146,17 @@ async function processTicket(ticket, projectSettings = {}) {
           });
 
           lastValidationErrors = patchErrors;
-          emitProgress(ticket.id, { type: 'forge_attempt', attempt: currentAttempt, maxAttempts, status: 'failed', errorCount: patchErrors.length, message: 'Patch failed, retrying with rewrite' });
+          emitProgress(ticket.id, {
+            type: 'forge_attempt',
+            attempt: currentAttempt,
+            maxAttempts,
+            status: 'failed',
+            errorCount: patchErrors.length,
+            message: 'Patch failed, triggering Full Rewrite Fallback'
+          });
 
           if (currentAttempt < maxAttempts) {
+            log.info('Retrying immediately with Rewrite Strategy', { attempt: currentAttempt + 1 });
             continue; // Retry immediately
           }
           // If max attempts reached, we fall through to normal error handling or validation check

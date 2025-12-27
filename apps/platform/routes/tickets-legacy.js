@@ -273,15 +273,14 @@ router.post('/complete', async (req, res) => {
     // For now, let's respect that the Agent might call complete with success=false
     // But we definitely shouldn't trigger verification or set in_review if it failed.
 
-    let newState = 'in_review';
+    let newState = 'verifying';
     if (!pr_url) {
-      newState = 'in_progress'; // Keep in progress or move to failed? 
-      // If agent says success=false, likely it will retry or has given up.
-      // But for now, let's just NOT set in_review if no PR.
-      console.log('[complete] No PR URL, skipping state transition to in_review');
+      newState = 'in_progress'; // Keep in progress if no PR
+      console.log('[complete] No PR URL, skipping state transition to verifying');
       return res.json({ success: false, message: 'No PR URL provided, skipping completion' });
     }
 
+    // 1. Update Ticket State to VERIFYING (The Fracture Protocol)
     await execute(`
       UPDATE tickets 
       SET state = $1, 
@@ -290,7 +289,8 @@ router.post('/complete', async (req, res) => {
           branch_name = $3,
           files_involved = $4,
           outputs = $5,
-          verification_status = 'pending'
+          verification_status = 'partial', 
+          updated_at = NOW()
       WHERE id = $6
     `, [
       newState,
@@ -301,22 +301,27 @@ router.post('/complete', async (req, res) => {
       ticket_id
     ]);
 
-    // Trigger Sentinel Verification (Fire and forget provided ticket is ready)
+    // 2. Trigger Sentinel Verification
     if (pr_url && branch_name) {
-      console.log(`[Sentintel] Triggering verification for ${ticket_id}`);
+      console.log(`[Swarm Protocol] Triggering Sentinel Verification for ${ticket_id}`);
+
+      // We use a non-await call here to not block the agent, but we log strictly.
       fetch('http://localhost:3006/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ticket_id,
-          repo_url: 'git@github.com:swarm-stack/swarm-workspace.git', // TODO: Get from project? Assuming monolithic repo for now
+          repo_url: 'git@github.com:swarm-stack/swarm-workspace.git', // Monorepo default
           branch_name,
           phases: ['static', 'automated', 'sentinel']
         })
-      }).catch(err => console.error(`[Sentinel] Trigger failed: ${err.message}`));
+      })
+        .then(r => r.json())
+        .then(data => console.log(`[Swarm Protocol] Sentinel Accepted:`, data))
+        .catch(err => console.error(`[Swarm Protocol] Sentinel Trigger FAILED: ${err.message}`));
     }
 
-    res.json({ success: true, state: 'in_review' });
+    res.json({ success: true, state: 'verifying' });
   } catch (err) {
     console.error('POST /complete error:', err);
     res.status(500).json({ error: 'Internal server error' });

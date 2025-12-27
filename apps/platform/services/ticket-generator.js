@@ -29,7 +29,7 @@ const INVALID_TICKET_PATTERNS = [
  */
 function validateTicketQuality(ticket, isExistingRepo = true) {
   const errors = [];
-  
+
   // CRITICAL: files_hint required for agent to know output targets
   if (!ticket.files_hint || ticket.files_hint.trim() === '') {
     // Only error if rag_context also has no files
@@ -42,12 +42,12 @@ function validateTicketQuality(ticket, isExistingRepo = true) {
       errors.push('files_hint required: must specify files to create or modify');
     }
   }
-  
+
   // Description must have minimum detail
   if (!ticket.description || ticket.description.length < 50) {
     errors.push('description too short: need implementation details (min 50 chars)');
   }
-  
+
   // Filter out nonsensical tickets for existing repos
   if (isExistingRepo) {
     const titleLower = (ticket.title || '').toLowerCase();
@@ -58,12 +58,12 @@ function validateTicketQuality(ticket, isExistingRepo = true) {
       }
     }
   }
-  
+
   // Validate acceptance criteria exists and is parseable
   if (ticket.acceptance_criteria) {
     try {
-      const criteria = typeof ticket.acceptance_criteria === 'string' 
-        ? JSON.parse(ticket.acceptance_criteria) 
+      const criteria = typeof ticket.acceptance_criteria === 'string'
+        ? JSON.parse(ticket.acceptance_criteria)
         : ticket.acceptance_criteria;
       if (!Array.isArray(criteria) || criteria.length === 0) {
         errors.push('acceptance_criteria must be a non-empty array');
@@ -72,7 +72,7 @@ function validateTicketQuality(ticket, isExistingRepo = true) {
       errors.push('acceptance_criteria must be valid JSON array');
     }
   }
-  
+
   return errors;
 }
 
@@ -88,44 +88,44 @@ async function generateTicketsFromSpec(sessionId, projectId, branchName = null) 
   if (!session) {
     return { success: false, error: 'Session not found' };
   }
-  
+
   if (!session.spec_card) {
     return { success: false, error: 'No spec_card found in session' };
   }
-  
+
   let specCard;
   try {
-    specCard = typeof session.spec_card === 'string' 
-      ? JSON.parse(session.spec_card) 
+    specCard = typeof session.spec_card === 'string'
+      ? JSON.parse(session.spec_card)
       : session.spec_card;
   } catch (e) {
     return { success: false, error: 'Invalid spec_card JSON' };
   }
-  
+
   // Validate project exists
   const project = await queryOne('SELECT * FROM projects WHERE id = $1', [projectId]);
   if (!project) {
     return { success: false, error: 'Project not found' };
   }
-  
+
   // Gather repo URLs using centralized extraction
   const repoUrls = extractSessionRepoUrls(session);
   const repoUrl = session.repo_url || repoUrls[0] || null;
-  
+
   // Check if this is an existing repo (has URL) vs greenfield
   const isExistingRepo = !!repoUrl;
-  
+
   console.log(`[TicketGenerator] Starting ticket generation for session ${sessionId}`);
   console.log(`[TicketGenerator] Found ${repoUrls.length} repo URLs for RAG context`);
   console.log(`[TicketGenerator] Existing repo mode: ${isExistingRepo}`);
-  
+
   // Generate tickets using Claude for intelligent breakdown
   let tickets = await breakdownSpecToTickets(specCard, projectId, sessionId, repoUrls, repoUrl);
-  
+
   // QUALITY GATE: Validate and filter tickets
   const validatedTickets = [];
   const rejectedTickets = [];
-  
+
   for (const ticket of tickets) {
     const errors = validateTicketQuality(ticket, isExistingRepo);
     if (errors.length === 0) {
@@ -135,9 +135,9 @@ async function generateTicketsFromSpec(sessionId, projectId, branchName = null) 
       console.warn(`[TicketGenerator] REJECTED ticket "${ticket.title}": ${errors.join(', ')}`);
     }
   }
-  
+
   console.log(`[TicketGenerator] Validation: ${validatedTickets.length} valid, ${rejectedTickets.length} rejected`);
-  
+
   // If too many tickets were rejected, log details
   if (rejectedTickets.length > validatedTickets.length) {
     console.error('[TicketGenerator] WARNING: More tickets rejected than accepted!');
@@ -146,14 +146,14 @@ async function generateTicketsFromSpec(sessionId, projectId, branchName = null) 
       errors: r.errors
     })), null, 2));
   }
-  
+
   // Insert ONLY validated tickets into database
   const pool = getPool();
   const client = await pool.connect();
-  
+
   try {
     await client.query('BEGIN');
-    
+
     for (const ticket of validatedTickets) {
       await client.query(`
         INSERT INTO tickets (
@@ -176,12 +176,12 @@ async function generateTicketsFromSpec(sessionId, projectId, branchName = null) 
         ticket.rag_context ? JSON.stringify(ticket.rag_context) : null
       ]);
     }
-    
+
     await client.query('COMMIT');
     console.log(`[TicketGenerator] Created ${validatedTickets.length} tickets for project ${projectId}`);
-    return { 
-      success: true, 
-      tickets: validatedTickets, 
+    return {
+      success: true,
+      tickets: validatedTickets,
       count: validatedTickets.length,
       rejected: rejectedTickets.length,
       rejectionDetails: rejectedTickets.map(r => ({ title: r.ticket.title, errors: r.errors }))
@@ -203,24 +203,24 @@ async function breakdownSpecToTickets(specCard, projectId, sessionId, repoUrls =
   const tickets = [];
   const features = specCard.features || [];
   const isExistingRepo = !!repoUrl;
-  
+
   // Map priority to scope
   const priorityToScope = {
     'high': 'medium',
-    'medium': 'medium', 
+    'medium': 'medium',
     'low': 'small'
   };
-  
+
   // First pass: create epic tickets for each major feature
   for (const feature of features) {
     const epicId = `TKT-${uuidv4().slice(0, 8).toUpperCase()}`;
-    
+
     // Fetch RAG context for the epic feature
     let epicRagContext = null;
     if (repoUrls.length > 0) {
       const ragQuery = `${feature.name}: ${feature.description}`;
       console.log(`[TicketGenerator] Fetching RAG for epic: "${feature.name}"`);
-      
+
       const ragResult = await fetchContext(ragQuery, repoUrls, { maxTokens: 3000 });
       if (ragResult.success && ragResult.chunks && ragResult.chunks.length > 0) {
         epicRagContext = {
@@ -235,7 +235,7 @@ async function breakdownSpecToTickets(specCard, projectId, sessionId, repoUrls =
         console.log(`[TicketGenerator] Found ${epicRagContext.files.length} relevant files for "${feature.name}"`);
       }
     }
-    
+
     // Create epic ticket with RAG context
     tickets.push({
       id: epicId,
@@ -251,20 +251,20 @@ async function breakdownSpecToTickets(specCard, projectId, sessionId, repoUrls =
       repo_url: repoUrl,
       rag_context: epicRagContext
     });
-    
+
     // Generate sub-tickets for complex features (with RAG context)
     if (feature.acceptance && feature.acceptance.length > 1) {
       const subTickets = await generateSubTickets(feature, epicId, projectId, sessionId, repoUrls, repoUrl, epicRagContext, isExistingRepo);
       tickets.push(...subTickets);
     }
   }
-  
+
   // Only add infrastructure tickets for greenfield projects
   if (!isExistingRepo && specCard.technical) {
     const infraTickets = generateInfraTickets(specCard.technical, projectId, sessionId, repoUrl);
     tickets.push(...infraTickets);
   }
-  
+
   return tickets;
 }
 
@@ -290,11 +290,11 @@ async function generateSubTickets(feature, epicId, projectId, sessionId, repoUrl
   // Use existing RAG context or fetch new
   let codeContext = '';
   let relevantFiles = epicRagContext?.files || [];
-  
+
   if (!epicRagContext && repoUrls.length > 0) {
     const ragQuery = `${feature.name}: ${feature.description}`;
     console.log(`[TicketGenerator] Fetching RAG for sub-tickets: "${ragQuery.slice(0, 50)}..."`);
-    
+
     const ragResult = await fetchContext(ragQuery, repoUrls, { maxTokens: 4000 });
     if (ragResult.success && ragResult.context) {
       codeContext = ragResult.context;
@@ -380,17 +380,17 @@ Remember: A ticket without file paths is USELESS to the AI agent. Include real f
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 3000
     });
-    
+
     const parsed = parseJsonResponse(response.content);
     if (!Array.isArray(parsed)) return [];
-    
+
     return parsed.map(t => {
       // Combine file hints - REQUIRED
       const allFiles = [
         ...(t.files_to_modify || []),
         ...(t.files_to_create || [])
       ];
-      
+
       // Build enriched description with file references
       let enrichedDesc = t.description || '';
       if (t.implementation_notes) {
@@ -402,7 +402,7 @@ Remember: A ticket without file paths is USELESS to the AI agent. Include real f
       if (t.files_to_create?.length > 0) {
         enrichedDesc += `\n\n**Files to Create:** ${t.files_to_create.join(', ')}`;
       }
-      
+
       return {
         id: `TKT-${uuidv4().slice(0, 8).toUpperCase()}`,
         project_id: projectId,
@@ -419,7 +419,8 @@ Remember: A ticket without file paths is USELESS to the AI agent. Include real f
           files_to_modify: t.files_to_modify || [],
           files_to_create: t.files_to_create || [],
           implementation_notes: t.implementation_notes || null,
-          inherited_from_epic: epicRagContext ? true : false
+          inherited_from_epic: epicRagContext ? true : false,
+          snippets: epicRagContext?.snippets || []
         }
       };
     });
@@ -436,7 +437,7 @@ Remember: A ticket without file paths is USELESS to the AI agent. Include real f
  */
 function generateInfraTickets(technical, projectId, sessionId, repoUrl = null) {
   const tickets = [];
-  
+
   // Project setup ticket - only for greenfield
   tickets.push({
     id: `TKT-${uuidv4().slice(0, 8).toUpperCase()}`,
@@ -456,7 +457,7 @@ function generateInfraTickets(technical, projectId, sessionId, repoUrl = null) {
     repo_url: repoUrl,
     rag_context: null
   });
-  
+
   // Integration tickets for each service
   if (technical.integrations && technical.integrations.length > 0) {
     for (const integration of technical.integrations) {
@@ -480,7 +481,7 @@ function generateInfraTickets(technical, projectId, sessionId, repoUrl = null) {
       });
     }
   }
-  
+
   return tickets;
 }
 

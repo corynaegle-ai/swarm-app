@@ -227,12 +227,14 @@ app.post('/verify', async (req, res) => {
 
     // Fetch acceptance criteria from ticket API (or use provided criteria)
     let acceptanceCriteria = reqCriteria || null;
-    if (!acceptanceCriteria) {
+    let ticketData = null;
+    if (!acceptanceCriteria || phasesToRun.includes('sentinel')) {
       try {
         const ticketRes = await fetch(`${config.TICKET_API_URL}/api/tickets/${ticket_id}`);
         if (ticketRes.ok) {
           const ticket = await ticketRes.json();
-          acceptanceCriteria = ticket.acceptance_criteria;
+          ticketData = ticket;
+          acceptanceCriteria = acceptanceCriteria || ticket.acceptance_criteria;
         }
       } catch (err) {
         console.log(`[${ticket_id}] Could not fetch ticket: ${err.message}`);

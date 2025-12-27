@@ -391,6 +391,7 @@ function buildPrompt(ticket, existingFiles = {}) {
   // Parse files_to_create and files_to_modify from rag_context
   let filesToCreate = [];
   let filesToModify = [];
+  let ragSnippets = [];
 
   if (ticket.rag_context) {
     try {
@@ -399,6 +400,7 @@ function buildPrompt(ticket, existingFiles = {}) {
         : ticket.rag_context;
       filesToCreate = ctx.files_to_create || [];
       filesToModify = ctx.files_to_modify || [];
+      ragSnippets = ctx.snippets || [];
     } catch (e) {
       log.warn('Failed to parse rag_context', { error: e.message });
     }
@@ -436,6 +438,18 @@ function buildPrompt(ticket, existingFiles = {}) {
     filesSection = fileHints.length > 0 ? fileHints.join('\n') : 'Determine appropriate file structure';
   }
 
+  // Build RAG snippets section
+  let snippetsSection = '';
+  if (ragSnippets.length > 0) {
+    snippetsSection += '\n### Reference Code (RAG Context)\n\n';
+    snippetsSection += 'Usage Reference only. Do not modify these files unless listed above.\n\n';
+
+    // Limit to 5 snippets to save tokens
+    for (const snippet of ragSnippets.slice(0, 5)) {
+      snippetsSection += `**File: ${snippet.file}**\n\`\`\`javascript\n${snippet.content}\n\`\`\`\n\n`;
+    }
+  }
+
   const hasModifications = filesToModify.length > 0;
 
   return `## Implementation Task
@@ -452,7 +466,7 @@ ${criteriaSection}
 
 ### Expected Files/Locations
 ${filesSection}
-
+${snippetsSection}
 ### Repository Context
 ${ticket.repo_url ? `Repository: ${ticket.repo_url}` : 'Standalone implementation'}
 ${ticket.branch_name ? `Branch: ${ticket.branch_name}` : ''}

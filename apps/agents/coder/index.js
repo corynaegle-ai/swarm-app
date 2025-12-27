@@ -210,6 +210,24 @@ async function sendHeartbeat(ticketId) {
 }
 
 async function completeTicket(ticketId, success, prUrl = null, error = null, criteriaStatus = null, filesChanged = [], branchName = null) {
+  if (!success) {
+    // If not successful, report failure to /fail endpoint to trigger retry logic
+    const res = await httpRequest(`${CONFIG.apiUrl}/fail`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }, {
+      ticket_id: ticketId,
+      agent_id: CONFIG.agentId,
+      error_message: error || 'Unknown error',
+      should_retry: false // Let backend decide based on learning
+    });
+
+    if (res.status >= 400) {
+      log.warn('Failed to report failure', { status: res.status, error: res.data });
+    }
+    return;
+  }
+
   // Use legacy /complete endpoint which expects ticket_id in body
   const res = await httpRequest(`${CONFIG.apiUrl}/complete`, {
     method: 'POST',

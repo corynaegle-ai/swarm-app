@@ -709,21 +709,36 @@ function writeFiles(repoDir, files) {
           continue;
         }
 
-        if (!fileContent.includes(patch.search)) {
-          log.warn('Patch search text not found', {
-            path: file.path,
-            searchPreview: patch.search.substring(0, 50) + '...'
-          });
+        // 1. Try Exact Match
+        if (fileContent.includes(patch.search)) {
+          fileContent = fileContent.replace(patch.search, patch.replace);
+          patchesApplied++;
           continue;
         }
 
-        const occurrences = fileContent.split(patch.search).length - 1;
-        if (occurrences > 1) {
-          log.warn('Patch search text not unique', { path: file.path, occurrences });
+        // 2. Try Fuzzy Match (Whitespace Normalization)
+        const normalize = (str) => str.replace(/\s+/g, ' ').trim();
+        const normContent = normalize(fileContent);
+        const normSearch = normalize(patch.search);
+
+        if (normContent.includes(normSearch)) {
+          log.info('Patch used fuzzy match', { path: file.path });
+          // Strategy: Regex escape the search string, replace \s+ with \s+, and try regex match
+          const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const sourceRegexPattern = patch.search.trim().split(/\s+/).map(escapeRegExp).join('\\s+');
+          const sourceRegex = new RegExp(sourceRegexPattern);
+
+          if (sourceRegex.test(fileContent)) {
+            fileContent = fileContent.replace(sourceRegex, patch.replace);
+            patchesApplied++;
+            continue;
+          }
         }
 
-        fileContent = fileContent.replace(patch.search, patch.replace);
-        patchesApplied++;
+        log.warn('Patch search text not found', {
+          path: file.path,
+          searchPreview: patch.search.substring(0, 50) + '...'
+        });
       }
 
       if (patchesApplied > 0) {
@@ -746,10 +761,11 @@ function writeFiles(repoDir, files) {
     }
   }
 
-  // We can't log individual file ops here easily without ticket ID.
-  // Will log bulk op in processTicket.
   return written;
 }
+
+// We can't log individual file ops here easily without ticket ID.
+// Will log bulk op in processTicket.
 
 async function commitAndPush(repoDir, ticket, branchName, summary) {
   // Ensure git identity is set for this repo

@@ -529,7 +529,7 @@ function parseForgeResponse(content, ticket) {
 
     const files = parsed.files.map(f => ({
       path: f.path,
-      content: f.content,
+      content: f.content || f.code || f.body || f.source || '',
       action: f.action || 'create'
     }));
 

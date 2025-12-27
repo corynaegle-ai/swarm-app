@@ -21,7 +21,6 @@ const ALLOWED_ROOTS = [
   '/opt/swarm-specs',
   '/opt/swarm-tickets',
   '/opt/swarm-dashboard',
-  '/opt/swarm-agents',
   '/var/log',
   '/tmp/swarm'
 ];
@@ -69,7 +68,7 @@ function validatePath(inputPath) {
 // Command validation helper
 function validateCommand(cmd) {
   const trimmed = cmd.trim();
-  const isAllowed = ALLOWED_COMMANDS.some(prefix => 
+  const isAllowed = ALLOWED_COMMANDS.some(prefix =>
     trimmed.startsWith(prefix) || trimmed.startsWith('./' + prefix)
   );
   return isAllowed;
@@ -85,7 +84,7 @@ router.get('/status', (req, res) => {
     const disk = execSync("df -h / | tail -1 | awk '{print $4}'").toString().trim();
     const memory = execSync("free -h | grep Mem | awk '{print $4}'").toString().trim();
     const loadAvg = execSync("cat /proc/loadavg | awk '{print $1, $2, $3}'").toString().trim();
-    
+
     res.json({
       status: 'online',
       uptime,
@@ -119,7 +118,7 @@ router.get('/services', (req, res) => {
   try {
     const output = execSync('pm2 jlist 2>/dev/null').toString();
     const services = JSON.parse(output);
-    res.json({ 
+    res.json({
       services: services.map(s => ({
         name: s.name,
         status: s.pm2_env.status,
@@ -159,7 +158,7 @@ router.get('/files/read', (req, res) => {
     if (!fs.existsSync(validation.path)) {
       return res.status(404).json({ error: 'File not found' });
     }
-    
+
     const stat = fs.statSync(validation.path);
     if (stat.isDirectory()) {
       return res.status(400).json({ error: 'Path is a directory, use /ls instead' });
@@ -171,7 +170,7 @@ router.get('/files/read', (req, res) => {
     const start = parseInt(offset);
     const count = parseInt(lines);
     const slice = allLines.slice(start, start + count);
-    
+
     res.json({
       path: validation.path,
       content: slice.join('\n'),
@@ -205,7 +204,7 @@ router.post('/files/write', (req, res) => {
     } else {
       fs.writeFileSync(validation.path, content);
     }
-    
+
     const stat = fs.statSync(validation.path);
     res.json({
       success: true,
@@ -230,7 +229,7 @@ router.get('/ls', (req, res) => {
     const hiddenFlag = showHidden === 'true' ? '-a' : '';
     const cmd = `find "${validation.path}" -maxdepth ${depth} ${hiddenFlag} -printf '%y %s %T@ %p\n' 2>/dev/null | head -200`;
     const output = execSync(cmd).toString();
-    
+
     const items = output.split('\n').filter(l => l.trim()).map(line => {
       const [type, size, mtime, ...pathParts] = line.split(' ');
       const itemPath = pathParts.join(' ');
@@ -242,7 +241,7 @@ router.get('/ls', (req, res) => {
         name: path.basename(itemPath)
       };
     });
-    
+
     res.json({ path: validation.path, items, count: items.length });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -269,7 +268,7 @@ router.get('/files/search', (req, res) => {
       const namePattern = pattern ? `-name "${pattern}"` : '';
       cmd = `find "${validation.path}" ${typeFlag} ${namePattern} 2>/dev/null | head -100`;
     }
-    
+
     const output = execSync(cmd).toString();
     const matches = output.split('\n').filter(l => l.trim());
     res.json({ matches, count: matches.length, searchPath: validation.path });
@@ -290,7 +289,7 @@ router.get('/files/info', (req, res) => {
     if (!fs.existsSync(validation.path)) {
       return res.status(404).json({ error: 'Path not found' });
     }
-    
+
     const stat = fs.statSync(validation.path);
     const info = {
       path: validation.path,
@@ -301,12 +300,12 @@ router.get('/files/info', (req, res) => {
       modified: stat.mtime,
       permissions: (stat.mode & 0o777).toString(8)
     };
-    
+
     if (stat.isFile()) {
       const lineCount = execSync(`wc -l < "${validation.path}" 2>/dev/null || echo 0`).toString().trim();
       info.lines = parseInt(lineCount);
     }
-    
+
     res.json(info);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -325,7 +324,7 @@ router.delete('/files', (req, res) => {
     if (!fs.existsSync(validation.path)) {
       return res.status(404).json({ error: 'Path not found' });
     }
-    
+
     const stat = fs.statSync(validation.path);
     if (stat.isDirectory()) {
       if (recursive === 'true') {
@@ -336,7 +335,7 @@ router.delete('/files', (req, res) => {
     } else {
       fs.unlinkSync(validation.path);
     }
-    
+
     res.json({ success: true, deleted: validation.path });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -365,13 +364,13 @@ router.post('/mkdir', (req, res) => {
 // POST /api/dev/exec - Execute shell command
 router.post('/exec', (req, res) => {
   const { command, cwd = '/opt', timeout = 30000 } = req.body;
-  
+
   if (!command) {
     return res.status(400).json({ error: 'Command required' });
   }
-  
+
   if (!validateCommand(command)) {
-    return res.status(403).json({ 
+    return res.status(403).json({
       error: 'Command not in whitelist',
       allowed: ALLOWED_COMMANDS
     });
@@ -384,14 +383,14 @@ router.post('/exec', (req, res) => {
       maxBuffer: 5 * 1024 * 1024,
       encoding: 'utf8'
     });
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       output: output.toString(),
       command,
       cwd
     });
   } catch (e) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: e.message,
       stderr: e.stderr?.toString(),
       stdout: e.stdout?.toString(),
@@ -415,7 +414,7 @@ router.get('/git/status', (req, res) => {
     const branch = execSync('git branch --show-current', { cwd: validation.path }).toString().trim();
     const ahead = execSync('git rev-list --count @{u}..HEAD 2>/dev/null || echo 0', { cwd: validation.path }).toString().trim();
     const behind = execSync('git rev-list --count HEAD..@{u} 2>/dev/null || echo 0', { cwd: validation.path }).toString().trim();
-    
+
     res.json({
       repo: validation.path,
       branch,
@@ -445,12 +444,12 @@ router.get('/git/log', (req, res) => {
       `git log --oneline -${count} --format="%h|%s|%an|%ar"`,
       { cwd: validation.path }
     ).toString();
-    
+
     const commits = log.split('\n').filter(l => l.trim()).map(l => {
       const [hash, message, author, date] = l.split('|');
       return { hash, message, author, date };
     });
-    
+
     res.json({ repo: validation.path, commits });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -472,7 +471,7 @@ router.get('/git/diff', (req, res) => {
       `git diff ${stagedFlag} ${fileArg} | head -500`,
       { cwd: validation.path }
     ).toString();
-    
+
     res.json({ repo: validation.path, diff, truncated: diff.split('\n').length >= 500 });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -503,7 +502,7 @@ router.post('/git/commit', (req, res) => {
   if (!message) {
     return res.status(400).json({ error: 'Commit message required' });
   }
-  
+
   const validation = validatePath(repo);
   if (!validation.valid) {
     return res.status(400).json({ error: validation.error });
@@ -571,11 +570,11 @@ router.get('/git/branches', (req, res) => {
   try {
     const local = execSync('git branch', { cwd: validation.path }).toString();
     const current = execSync('git branch --show-current', { cwd: validation.path }).toString().trim();
-    
+
     const branches = local.split('\n')
       .filter(l => l.trim())
       .map(l => l.replace(/^\*?\s*/, '').trim());
-    
+
     res.json({ repo: validation.path, current, branches });
   } catch (e) {
     res.status(500).json({ error: e.message });

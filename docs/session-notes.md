@@ -13,7 +13,7 @@
 | **Registry DB** | `/opt/swarm-registry/registry.db` |
 | **Platform** | `/opt/swarm-platform` (PM2: swarm-platform) |
 | **Verifier** | `/opt/swarm-verifier` (PM2: swarm-verifier, port 8090) |
-| **Specs Repo** | `/opt/swarm-specs` → `corynaegle-ai/swarm-specs` |
+| **Specs Repo** | `/opt/swarm-app/docs` → `monorepo/docs` |
 
 ### SSH Template
 ```bash
@@ -40,7 +40,7 @@ export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
 
 ### Created Files
 ```
-/opt/swarm-specs/design-docs/observability/alerting/
+/opt/swarm-app/docs/design-docs/observability/alerting/
 ├── swarm-alerts.yaml    # 8 Prometheus alerting rules + 4 recording rules
 ├── alertmanager.yaml    # Routing, receivers, inhibition rules
 ├── slack.tmpl           # Slack notification templates
@@ -109,7 +109,7 @@ Begin implementing the completed observability designs into production.
 
 ## 📊 OBSERVABILITY DESIGN STATUS - COMPLETE ✅
 
-**Design Doc:** `/opt/swarm-specs/design-docs/observability/design.md`
+**Design Doc:** `/opt/swarm-app/docs/design-docs/observability/design.md`
 
 | Component | Status | Deliverables |
 |-----------|--------|--------------|
@@ -121,7 +121,7 @@ Begin implementing the completed observability designs into production.
 
 ### File Summary
 ```
-/opt/swarm-specs/design-docs/observability/
+/opt/swarm-app/docs/design-docs/observability/
 ├── design.md                    # Main 3000+ line design doc
 ├── dashboards/
 │   ├── system-overview.json     # Ops health check

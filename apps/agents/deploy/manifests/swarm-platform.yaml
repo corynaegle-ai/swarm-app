@@ -7,8 +7,8 @@ service:
   port: 8080
   
 repository:
-  path: /opt/swarm-platform
-  github: corynaegle-ai/swarm-platform
+  path: /opt/swarm-app
+  github: corynaegle-ai/swarm-app
   branch: main
   
 environment:
@@ -21,7 +21,7 @@ build:
   commands:
     - npm ci
   timeout: 120
-  working_dir: /opt/swarm-platform
+  working_dir: /opt/swarm-app/apps/platform
   
 deploy:
   strategy: replace

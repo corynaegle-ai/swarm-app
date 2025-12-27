@@ -2,7 +2,7 @@
  * Agent Learning System - Logging Infrastructure
  * Phase 1: Execution logging and error classification
  * 
- * Location: /opt/swarm-platform/lib/agent-learning.js
+ * Location: /opt/swarm-app/apps/platform/lib/agent-learning.js
  * Updated: 2025-12-17 - Migrated to PostgreSQL
  */
 
@@ -191,7 +191,7 @@ async function recordExecutionError(executionId, error, classification = null, t
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : null;
     const { category, subcategory } = classification || classifyError(errorMessage);
-    
+
     const result = await execute(`
       INSERT INTO execution_errors (
         execution_id, tenant_id, category, subcategory,
@@ -199,7 +199,7 @@ async function recordExecutionError(executionId, error, classification = null, t
       ) VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING id
     `, [executionId, tenantId, category, subcategory, errorMessage, errorStack]);
-    
+
     return { errorId: result.rows[0]?.id };
   } catch (err) {
     console.error('[agent-learning] Failed to record error:', err.message);

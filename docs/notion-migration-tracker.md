@@ -13,8 +13,8 @@
 notion-fetch --id <page_id>
 
 # Git workflow (local Mac):
-cd ~/repos/swarm-specs
-git add .
+cd ~/Projects/swarm
+git add docs/
 git commit -m "docs: migrate <document-name> from Notion"
 git push origin main
 ```
@@ -134,7 +134,7 @@ These documents claim to be moved in Notion but the files don't exist in git. Co
 ## Directory Structure
 
 ```
-swarm-specs/
+/opt/swarm-app/docs/
 ├── architecture/          # System architecture docs
 ├── business/              # Investor pitches, market analysis
 ├── code-reviews/          # Code review findings

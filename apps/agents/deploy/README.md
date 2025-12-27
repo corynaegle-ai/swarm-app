@@ -225,7 +225,7 @@ await fetch('https://deploy.dev.swarmstack.net/api/callbacks/ticket-complete', {
 ```bash
 curl -X POST https://deploy.dev.swarmstack.net/api/link-commit \
   -H "Content-Type: application/json" \
-  -d '{"commit_sha": "abc123", "ticket_id": "TICKET-123", "repo": "swarm-dashboard"}'
+  -d '{"commit_sha": "abc123", "ticket_id": "TICKET-123", "repo": "swarm-platform"}'
 ```
 
 ## Safety Guardrails
@@ -255,7 +255,6 @@ curl -X POST https://deploy.dev.swarmstack.net/api/link-commit \
 │   ├── logger.ts             # Winston logging
 │   └── types.ts              # TypeScript interfaces
 ├── manifests/
-│   ├── swarm-dashboard.yaml
 │   └── swarm-platform.yaml
 ├── data/
 │   └── deployments.db

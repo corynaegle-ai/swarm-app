@@ -22,7 +22,9 @@ module.exports = {
         {
             name: 'swarm-engine',
             cwd: '/opt/swarm-app/packages/engine',
-            script: 'lib/engine.js'
+            script: 'cli/swarm-engine.js',
+            args: ['start'],
+            env_file: '/opt/swarm-app/apps/platform/.env'
         },
         {
             name: 'swarm-orchestrator-api',

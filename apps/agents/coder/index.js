@@ -23,7 +23,7 @@ const os = require('os');
 // Agent Learning System for execution telemetry
 let agentLearning = null;
 try {
-  agentLearning = require('/opt/swarm-platform/lib/agent-learning.js');
+  agentLearning = require('/opt/swarm-app/apps/platform/lib/agent-learning.js');
 } catch (err) {
   console.warn('Warning: Agent learning module not available:', err.message);
 }

@@ -21,7 +21,8 @@ try {
     DB_PATH: __dirname + '/verification.db',
     AGENT_ID: 'sentinel-agent-01',
     TICKET_API_URL: 'http://localhost:3002',
-    AGENT_SERVICE_KEY: 'agent-internal-key-dev'
+    AGENT_SERVICE_KEY: 'agent-internal-key-dev',
+    GITHUB_TOKEN: process.env.GITHUB_TOKEN
   };
 }
 const git = require('./lib/git');
@@ -71,9 +72,20 @@ function initDb() {
       sentinel_result TEXT,
       sentinel_decision TEXT,
       sentinel_score INTEGER,
+      feedback_for_agent TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Simple migration for missing columns
+  const columns = db.pragma('table_info(verification_attempts)');
+  const hasFeedback = columns.some(c => c.name === 'feedback_for_agent');
+  if (!hasFeedback) {
+    try {
+      db.exec('ALTER TABLE verification_attempts ADD COLUMN feedback_for_agent TEXT');
+      console.log('Migrated DB: Added feedback_for_agent column');
+    } catch (e) { console.warn('Migration failed', e.message); }
+  }
 
   db.exec(`CREATE INDEX IF NOT EXISTS idx_verify_ticket ON verification_attempts(ticket_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_verify_status ON verification_attempts(status)`);

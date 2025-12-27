@@ -235,9 +235,7 @@ async function generateCode(ticket, heartbeatFn, projectSettings = {}, existingF
 
     const usage = { inputTokens: res.data.usage?.input_tokens || 0, outputTokens: res.data.usage?.output_tokens || 0 };
     const content = res.data.content?.[0]?.text || '';
-    log.info('DEBUG_RAW_LLM_RESPONSE', { content_summary: content.substring(0, 200) + '...', raw_length: content.length, full_content: content });
-    const parsed = parseForgeResponse(content, ticket);
-    log.info('DEBUG_PARSED_RESPONSE', { files: parsed.files });
+    const parsed = parseForgeResponse(content, ticket, existingFiles);
     return { ...parsed, usage };
   } finally {
     clearInterval(heartbeatTimer);
@@ -271,7 +269,7 @@ async function generateCodeWithRetry(ticket, heartbeatFn, projectSettings, previ
 
     const usage = { inputTokens: res.data.usage?.input_tokens || 0, outputTokens: res.data.usage?.output_tokens || 0 };
     const content = res.data.content?.[0]?.text || '';
-    const parsed = parseForgeResponse(content, ticket);
+    const parsed = parseForgeResponse(content, ticket, existingFiles);
     return { ...parsed, usage };
   } finally {
     clearInterval(heartbeatTimer);
@@ -514,7 +512,7 @@ ${basePrompt}`;
 }
 
 
-function parseForgeResponse(content, ticket) {
+function parseForgeResponse(content, ticket, existingFiles = {}) {
   let jsonStr = content;
 
   const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -529,11 +527,31 @@ function parseForgeResponse(content, ticket) {
       throw new Error('Response missing files array');
     }
 
-    const files = parsed.files.map(f => ({
-      path: f.path,
-      content: f.content || f.code || f.body || f.source || '',
-      action: f.action || 'create'
-    }));
+    const files = parsed.files.map(f => {
+      let fileContent = f.content || f.code || f.body || f.source || '';
+
+      // If content is empty but patches exist, try to construct content from existing file
+      if (!fileContent && f.patches && Array.isArray(f.patches) && existingFiles[f.path]) {
+        try {
+          let currentContent = existingFiles[f.path];
+          for (const patch of f.patches) {
+            if (patch.search && patch.replace !== undefined && currentContent.includes(patch.search)) {
+              currentContent = currentContent.replace(patch.search, patch.replace);
+            }
+          }
+          fileContent = currentContent;
+        } catch (err) {
+          log.warn('Failed to apply patches for preview', { path: f.path, error: err.message });
+        }
+      }
+
+      return {
+        path: f.path,
+        content: fileContent,
+        action: f.action || 'create',
+        patches: f.patches // Pass through patches for the writer
+      };
+    });
 
     if (parsed.tests && Array.isArray(parsed.tests)) {
       for (const test of parsed.tests) {

@@ -18,7 +18,7 @@ const Backlog = () => {
 
   const filteredTickets = tickets.filter(ticket => {
     const matchesSearch = ticket.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         ticket.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      ticket.description?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesFilter = filterStatus === 'all' || ticket.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
@@ -76,7 +76,7 @@ const Backlog = () => {
           onClick={() => setShowCreateModal(true)}
           className="enhanced-new-idea-btn"
           style={{
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            background: 'linear-gradient(135deg, #ff4444 0%, #cc2200 100%)',
             color: 'white',
             padding: '12px 24px',
             borderRadius: '8px',
@@ -87,19 +87,19 @@ const Backlog = () => {
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
+            boxShadow: '0 4px 15px rgba(255, 68, 68, 0.4)',
             transition: 'all 0.3s ease',
             transform: 'translateY(0)',
           }}
           onMouseEnter={(e) => {
             e.target.style.transform = 'translateY(-2px)';
-            e.target.style.boxShadow = '0 8px 25px rgba(102, 126, 234, 0.6)';
-            e.target.style.background = 'linear-gradient(135deg, #5a6fd8 0%, #6b4190 100%)';
+            e.target.style.boxShadow = '0 8px 25px rgba(255, 68, 68, 0.6)';
+            e.target.style.background = 'linear-gradient(135deg, #ff6666 0%, #dd3300 100%)';
           }}
           onMouseLeave={(e) => {
             e.target.style.transform = 'translateY(0)';
-            e.target.style.boxShadow = '0 4px 15px rgba(102, 126, 234, 0.4)';
-            e.target.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            e.target.style.boxShadow = '0 4px 15px rgba(255, 68, 68, 0.4)';
+            e.target.style.background = 'linear-gradient(135deg, #ff4444 0%, #cc2200 100%)';
           }}
         >
           <Plus size={18} />

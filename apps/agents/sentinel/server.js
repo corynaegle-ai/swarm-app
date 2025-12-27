@@ -10,6 +10,7 @@
 
 const express = require('express');
 const cors = require('cors');
+const { Pool } = require('pg');
 let config;
 try {
   config = require('./config');
@@ -18,11 +19,16 @@ try {
   config = {
     PORT: 3006,
     REPOS_BASE_PATH: '/tmp/swarm-sentinel-repos',
-    DB_PATH: __dirname + '/verification.db',
+    // DB_PATH removed, using PG credentials instead
     AGENT_ID: 'sentinel-agent-01',
     TICKET_API_URL: 'http://localhost:3002',
     AGENT_SERVICE_KEY: 'agent-internal-key-dev',
-    GITHUB_TOKEN: process.env.GITHUB_TOKEN
+    GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+    PG_HOST: process.env.PG_HOST || 'localhost',
+    PG_PORT: process.env.PG_PORT || 5432,
+    PG_USER: process.env.PG_USER || 'swarm',
+    PG_PASSWORD: process.env.PG_PASSWORD || 'swarm_dev_2024',
+    PG_DB: process.env.PG_DB || 'swarmdb'
   };
 }
 const git = require('./lib/git');
@@ -30,7 +36,6 @@ const staticPhase = require('./lib/phases/static');
 const automatedPhase = require('./lib/phases/automated');
 const reporter = require('./lib/reporter');
 const sentinelPhase = require("./lib/phases/sentinel");
-const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 
@@ -44,53 +49,57 @@ if (!fs.existsSync(config.REPOS_BASE_PATH)) {
 }
 
 // Initialize database connection
-let db;
-try {
-  db = new Database(config.DB_PATH);
-  db.pragma("journal_mode = WAL");
-  db.pragma("busy_timeout = 5000");
-  console.log("Database connected with WAL mode, busy_timeout=5000ms");
-  initDb();
-} catch (err) {
-  console.error('Failed to connect to database:', err.message);
-  console.log('Running without database persistence');
-}
+const pool = new Pool({
+  host: config.PG_HOST,
+  port: config.PG_PORT,
+  user: config.PG_USER,
+  password: config.PG_PASSWORD,
+  database: config.PG_DB,
+  max: 10,
+  idleTimeoutMillis: 30000
+});
 
-function initDb() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS verification_attempts (
-      id TEXT PRIMARY KEY,
-      ticket_id TEXT NOT NULL,
-      attempt_number INTEGER NOT NULL,
-      branch_name TEXT NOT NULL,
-      commit_sha TEXT,
-      status TEXT NOT NULL,
-      failed_phase TEXT,
-      duration_ms INTEGER,
-      static_result TEXT,
-      automated_result TEXT,
-      sentinel_result TEXT,
-      sentinel_decision TEXT,
-      sentinel_score INTEGER,
-      feedback_for_agent TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+});
 
-  // Simple migration for missing columns
-  const columns = db.pragma('table_info(verification_attempts)');
-  const hasFeedback = columns.some(c => c.name === 'feedback_for_agent');
-  if (!hasFeedback) {
+async function initDb() {
+  try {
+    const client = await pool.connect();
     try {
-      db.exec('ALTER TABLE verification_attempts ADD COLUMN feedback_for_agent TEXT');
-      console.log('Migrated DB: Added feedback_for_agent column');
-    } catch (e) { console.warn('Migration failed', e.message); }
-  }
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS verification_attempts (
+          id TEXT PRIMARY KEY,
+          ticket_id TEXT NOT NULL,
+          attempt_number INTEGER NOT NULL,
+          branch_name TEXT NOT NULL,
+          commit_sha TEXT,
+          status TEXT NOT NULL,
+          failed_phase TEXT,
+          duration_ms INTEGER,
+          static_result JSONB,
+          automated_result JSONB,
+          sentinel_result JSONB,
+          sentinel_decision TEXT,
+          sentinel_score INTEGER,
+          feedback_for_agent JSONB,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
 
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_verify_ticket ON verification_attempts(ticket_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_verify_status ON verification_attempts(status)`);
-  console.log('Database initialized');
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_verify_ticket ON verification_attempts(ticket_id)`);
+      await client.query(`CREATE INDEX IF NOT EXISTS idx_verify_status ON verification_attempts(status)`);
+      console.log('Database initialized (PostgreSQL)');
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error('Failed to initialize database:', err.message);
+  }
 }
+
+// Start DB init
+initDb();
 
 
 // ============================================================================
@@ -100,10 +109,19 @@ function initDb() {
 /**
  * Health check
  */
-app.get('/health', (req, res) => {
+app.get('/health', async (req, res) => {
+  let dbStatus = 'unknown';
+  try {
+    await pool.query('SELECT 1');
+    dbStatus = 'connected';
+  } catch (e) {
+    dbStatus = 'disconnected';
+  }
+
   res.json({
     status: 'healthy',
     service: 'swarm-verifier',
+    database: dbStatus,
     uptime_seconds: Math.floor(process.uptime())
   });
 });
@@ -111,43 +129,46 @@ app.get('/health', (req, res) => {
 /**
  * Metrics endpoint
  */
-app.get('/metrics', (req, res) => {
-  if (!db) {
-    return res.json({ error: 'Database not available', metrics: null });
-  }
-
+app.get('/metrics', async (req, res) => {
   try {
-    const stats = db.prepare(`
+    const statsRes = await pool.query(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN status = 'passed' THEN 1 ELSE 0 END) as passed,
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
         AVG(duration_ms) as avg_duration_ms
       FROM verification_attempts
-      WHERE created_at > datetime('now', '-24 hours')
-    `).get();
+      WHERE created_at > NOW() - INTERVAL '24 hours'
+    `);
+    const stats = statsRes.rows[0];
 
-    const phaseStats = db.prepare(`
+    const phaseStatsRes = await pool.query(`
       SELECT 
         failed_phase,
         COUNT(*) as count
       FROM verification_attempts
-      WHERE status = 'failed' AND created_at > datetime('now', '-24 hours')
+      WHERE status = 'failed' AND created_at > NOW() - INTERVAL '24 hours'
       GROUP BY failed_phase
-    `).all();
+    `);
+
+    // Postgres returns counts as strings sometimes, convert to number
+    const total = parseInt(stats.total || 0);
+    const passed = parseInt(stats.passed || 0);
+    const failed = parseInt(stats.failed || 0);
 
     res.json({
-      verifications_total: stats.total || 0,
-      verifications_passed: stats.passed || 0,
-      verifications_failed: stats.failed || 0,
-      pass_rate: stats.total ? (stats.passed / stats.total).toFixed(3) : 0,
+      verifications_total: total,
+      verifications_passed: passed,
+      verifications_failed: failed,
+      pass_rate: total ? (passed / total).toFixed(3) : 0,
       avg_duration_ms: Math.round(stats.avg_duration_ms || 0),
-      failures_by_phase: phaseStats.reduce((acc, p) => {
-        acc[p.failed_phase || 'unknown'] = p.count;
+      failures_by_phase: phaseStatsRes.rows.reduce((acc, p) => {
+        acc[p.failed_phase || 'unknown'] = parseInt(p.count);
         return acc;
       }, {})
     });
   } catch (err) {
+    console.error('Metrics error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -190,6 +211,7 @@ app.post('/verify', async (req, res) => {
   };
 
   let repoPath = null;
+  let commitSha = null;
 
   try {
     // Clone/update repository
@@ -198,7 +220,7 @@ app.post('/verify', async (req, res) => {
     console.log(`[${ticket_id}] Repository ready at ${repoPath}`);
 
     // Get commit SHA
-    const commitSha = await git.getCurrentCommit(repoPath);
+    commitSha = await git.getCurrentCommit(repoPath);
     result.commit_sha = commitSha;
 
 
@@ -228,7 +250,7 @@ app.post('/verify', async (req, res) => {
         result.feedback_for_agent = reporter.formatFeedback(staticResult.checks);
         result.duration_ms = Date.now() - startTime;
 
-        logVerification(db, ticket_id, attemptNum, branch_name, commitSha, result);
+        await logVerification(pool, ticket_id, attemptNum, branch_name, commitSha, result);
         logActivity(ticket_id, 'verification_failed', 'Static analysis failed', {
           phase: 'static',
           errors: staticResult.checks.filter(c => !c.passed).length,
@@ -260,7 +282,7 @@ app.post('/verify', async (req, res) => {
         result.feedback_for_agent = reporter.formatFeedback(automatedResult.checks);
         result.duration_ms = Date.now() - startTime;
 
-        logVerification(db, ticket_id, attemptNum, branch_name, commitSha, result);
+        await logVerification(pool, ticket_id, attemptNum, branch_name, commitSha, result);
         logActivity(ticket_id, 'verification_failed', 'Automated checks failed', {
           phase: 'automated',
           errors: automatedResult.checks.filter(c => !c.passed).length,
@@ -303,7 +325,7 @@ app.post('/verify', async (req, res) => {
         result.feedback_for_agent = [...result.feedback_for_agent, ...sentinelFeedback];
         result.duration_ms = Date.now() - startTime;
 
-        logVerification(db, ticket_id, attemptNum, branch_name, commitSha, result);
+        await logVerification(pool, ticket_id, attemptNum, branch_name, commitSha, result);
         logActivity(ticket_id, 'verification_failed', 'Sentinel AI review failed', {
           phase: 'sentinel',
           decision: sentinelResult.decision,
@@ -326,7 +348,7 @@ app.post('/verify', async (req, res) => {
     result.ready_for_pr = true;
     result.duration_ms = Date.now() - startTime;
 
-    logVerification(db, ticket_id, attemptNum, branch_name, commitSha, result);
+    await logVerification(pool, ticket_id, attemptNum, branch_name, commitSha, result);
     logActivity(ticket_id, 'verification_passed', 'All verification phases passed', {
       duration_ms: result.duration_ms,
       status: 'success'
@@ -341,7 +363,7 @@ app.post('/verify', async (req, res) => {
     result.error = err.message;
     result.duration_ms = Date.now() - startTime;
 
-    logVerification(db, ticket_id, attemptNum, branch_name, null, result);
+    await logVerification(pool, ticket_id, attemptNum, branch_name, commitSha || null, result);
     logActivity(ticket_id, 'verification_error', `Verification process error: ${err.message}`, {
       error: err.message,
       status: 'error'
@@ -354,15 +376,11 @@ app.post('/verify', async (req, res) => {
 /**
  * Get verification history for a ticket
  */
-app.get('/verify/:ticket_id/history', (req, res) => {
-  if (!db) {
-    return res.status(503).json({ error: 'Database not available' });
-  }
-
+app.get('/verify/:ticket_id/history', async (req, res) => {
   const { ticket_id } = req.params;
 
   try {
-    const attempts = db.prepare(`
+    const attemptsRes = await pool.query(`
       SELECT 
         attempt_number as attempt,
         created_at as timestamp,
@@ -371,9 +389,11 @@ app.get('/verify/:ticket_id/history', (req, res) => {
         duration_ms,
         commit_sha
       FROM verification_attempts
-      WHERE ticket_id = ?
+      WHERE ticket_id = $1
       ORDER BY attempt_number ASC
-    `).all(ticket_id);
+    `, [ticket_id]);
+
+    const attempts = attemptsRes.rows;
 
     res.json({
       ticket_id,
@@ -382,6 +402,7 @@ app.get('/verify/:ticket_id/history', (req, res) => {
       final_status: attempts.length > 0 ? attempts[attempts.length - 1].status : null
     });
   } catch (err) {
+    console.error('History fetch error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -389,16 +410,14 @@ app.get('/verify/:ticket_id/history', (req, res) => {
 /**
  * Log verification attempt to database
  */
-function logVerification(db, ticketId, attempt, branch, commitSha, result) {
-  if (!db) return;
-
+async function logVerification(pool, ticketId, attempt, branch, commitSha, result) {
   try {
     const id = `${ticketId}-${attempt}-${Date.now()}`;
-    db.prepare(`
+    await pool.query(`
       INSERT INTO verification_attempts 
       (id, ticket_id, attempt_number, branch_name, commit_sha, status, failed_phase, duration_ms, static_result, automated_result, sentinel_result, sentinel_decision, sentinel_score, feedback_for_agent)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    `, [
       id,
       ticketId,
       attempt,
@@ -415,7 +434,7 @@ function logVerification(db, ticketId, attempt, branch, commitSha, result) {
       result.feedback_for_agent && result.feedback_for_agent.length > 0
         ? JSON.stringify(result.feedback_for_agent)
         : null
-    );
+    ]);
   } catch (err) {
     console.error('Failed to log verification:', err.message);
   }
@@ -455,5 +474,5 @@ async function logActivity(ticketId, category, message, metadata = {}) {
 app.listen(config.PORT, () => {
   console.log(`Swarm Verifier running on port ${config.PORT}`);
   console.log(`Repos directory: ${config.REPOS_BASE_PATH}`);
-  console.log(`Database: ${config.DB_PATH}`);
+  // Removed DB_PATH log
 });

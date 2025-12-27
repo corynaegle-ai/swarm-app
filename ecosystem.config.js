@@ -44,12 +44,11 @@ module.exports = {
             name: 'swarm-coder-agent',
             cwd: '/opt/swarm-app/apps/agents/coder',
             script: 'index.js',
+            env_file: '/opt/swarm-app/apps/platform/.env',
             env: {
                 AGENT_ID: 'forge-agent-001',
                 POLL_INTERVAL: '5',
                 PERSONA_PATH: '/opt/swarm-app/docs/personas/forge.md',
-                ANTHROPIC_API_KEY: 'SECRET',
-                GITHUB_TOKEN: 'SECRET',
                 API_URL: 'http://localhost:3002'
             }
         },

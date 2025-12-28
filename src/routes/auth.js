@@ -1,27 +1,15 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const User = require('../models/User'); // Assuming User model exists
 const router = express.Router();
 
-// Mock user database - in production this would be a real database
-const users = [
-  {
-    id: 1,
-    email: 'admin@example.com',
-    password: '$2a$10$K7L8vl9QX5Q5Z5Z5Z5Z5ZuK7L8vl9QX5Q5Z5Z5Z5ZuK7L8vl9QX5Q5', // 'password123'
-    role: 'admin'
-  },
-  {
-    id: 2,
-    email: 'user@example.com',
-    password: '$2a$10$M7L8vl9QX5Q5Z5Z5Z5Z5ZuM7L8vl9QX5Q5Z5Z5Z5ZuM7L8vl9QX5Q5', // 'userpass'
-    role: 'user'
-  }
-];
+// JWT secret from environment variables
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
 
 /**
  * POST /api/auth/login
- * Authenticates user and returns JWT token
+ * Authenticate user and return JWT token
  */
 router.post('/login', async (req, res) => {
   try {
@@ -35,7 +23,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user by email
-    const user = users.find(u => u.email === email);
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       return res.status(401).json({
         error: 'Invalid credentials'
@@ -43,33 +31,33 @@ router.post('/login', async (req, res) => {
     }
 
     // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
       return res.status(401).json({
         error: 'Invalid credentials'
       });
     }
 
-    // Generate JWT token with 24 hour expiration
-    const token = jwt.sign(
-      {
-        userId: user.id,
-        email: user.email,
-        role: user.role
-      },
-      process.env.JWT_SECRET || 'default-secret-for-dev',
-      {
-        expiresIn: '24h'
-      }
-    );
+    // Create JWT payload with user role
+    const payload = {
+      userId: user._id,
+      email: user.email,
+      role: user.role || 'user'
+    };
 
-    // Return successful response
-    res.json({
+    // Generate JWT token with 24 hour expiration
+    const token = jwt.sign(payload, JWT_SECRET, {
+      expiresIn: '24h'
+    });
+
+    // Return success response with token
+    res.status(200).json({
+      success: true,
       token,
       user: {
-        id: user.id,
+        id: user._id,
         email: user.email,
-        role: user.role
+        role: user.role || 'user'
       }
     });
 

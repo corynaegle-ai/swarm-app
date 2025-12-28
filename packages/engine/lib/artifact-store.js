@@ -76,6 +76,9 @@ export class ArtifactStore {
       await client.query(`ALTER TABLE execution_artifacts ADD COLUMN IF NOT EXISTS step_id TEXT`);
       await client.query(`ALTER TABLE execution_artifacts ADD COLUMN IF NOT EXISTS vm_id INTEGER`);
       await client.query(`ALTER TABLE execution_artifacts ADD COLUMN IF NOT EXISTS metadata JSONB`);
+      await client.query(`ALTER TABLE execution_artifacts ADD COLUMN IF NOT EXISTS file_path TEXT`);
+      await client.query(`ALTER TABLE execution_artifacts ADD COLUMN IF NOT EXISTS size_bytes INTEGER`);
+      await client.query(`ALTER TABLE execution_artifacts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`);
 
       await client.query('CREATE INDEX IF NOT EXISTS idx_artifacts_ticket ON execution_artifacts(ticket_id)');
       await client.query('CREATE INDEX IF NOT EXISTS idx_artifacts_run ON execution_artifacts(workflow_run_id)');

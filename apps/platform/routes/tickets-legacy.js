@@ -457,8 +457,8 @@ router.post('/release', async (req, res) => {
     await execute(`
       UPDATE tickets 
       SET state = 'ready', 
-          assignee_id = NULL,
-          assignee_type = NULL,
+          assignee_id = COALESCE(assignee_id, 'forge'),
+          assignee_type = COALESCE(assignee_type, 'agent'),
           vm_id = NULL,
           lease_expires = NULL,
           progress_log = COALESCE(progress_log, '') || $1

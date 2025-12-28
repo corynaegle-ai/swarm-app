@@ -276,3 +276,36 @@ This ensures WebSocket events go to both:
 
 ---
 *Updated: 2025-12-28 ~04:15 UTC*
+
+---
+
+## Debug Session: Agent Execution Assignee (2025-12-28)
+
+### Issues Found and Fixed
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| Engine artifact INSERT failures | Missing file_path, size_bytes, expires_at columns | ALTER TABLE added columns |
+| 18 orphaned tickets | sentinel-agent not in registry | Registered new agent definition |
+
+### Agent Registry After Fix
+- forge-agent-001 (forge v2.0.0)
+- forge-v3 (forge v3.0.0)
+- sentinel-agent-001 (sentinel v1.0.0)
+- sentinel-agent (sentinel-agent v1.0.0) - NEW
+- deploy-agent-001 (deploy v1.0.0)
+- echo (test agent)
+
+### Schema Fix Applied
+Added these columns to execution_artifacts:
+- file_path TEXT
+- size_bytes INTEGER
+- expires_at TIMESTAMPTZ
+
+### Prevention
+artifact-store.js patched with ALTER TABLE IF NOT EXISTS for all three columns.
+
+### Verification
+- Orphaned ticket count: 0
+- Engine restarted successfully (PID 4034743)
+

@@ -309,3 +309,31 @@ artifact-store.js patched with ALTER TABLE IF NOT EXISTS for all three columns.
 - Orphaned ticket count: 0
 - Engine restarted successfully (PID 4034743)
 
+
+---
+
+## Phase 5: HITL CSS Polish - COMPLETE ✅
+*Verified: 2025-12-28*
+
+### Audit Results
+
+| Component | CSS File | Status |
+|-----------|----------|--------|
+| Glass-card blur | DesignSession.css | ✅ |
+| Input focus glow | App.css | ✅ |
+| Message slideIn | ChatMessage.css | ✅ |
+| Typing indicator | TypingIndicator.css | ✅ |
+| Progress gradient | App.css | ✅ |
+| State badges (9) | App.css | ✅ |
+| Build | npm run build | ✅ |
+
+### Key Files Verified
+- /opt/swarm-app/apps/dashboard/src/pages/DesignSession.css (552 lines)
+- /opt/swarm-app/apps/dashboard/src/components/ChatMessage.css
+- /opt/swarm-app/apps/dashboard/src/components/TypingIndicator.css
+
+### Notes
+Spec file (phase5-hitl-frontend.md) was stale - last modified Dec 13.
+CSS work was completed Dec 20-26 by previous sessions.
+Updated spec to mark Task 4 complete.
+

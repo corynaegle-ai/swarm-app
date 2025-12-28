@@ -1,30 +1,21 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const User = require('../models/User'); // Assuming User model exists
 const router = express.Router();
 
-// Mock user database - in production, use actual database
-const users = [
-  {
-    id: 1,
-    email: 'user@example.com',
-    password: '$2b$10$K7L/VxwuP2lioN7nkwlqjOr8P5D1P5JjP6kJ1Q5P6kJ1Q5P6kJ1Q5', // 'password123'
-    role: 'user'
-  },
-  {
-    id: 2,
-    email: 'admin@example.com', 
-    password: '$2b$10$K7L/VxwuP2lioN7nkwlqjOr8P5D1P5JjP6kJ1Q5P6kJ1Q5P6kJ1Q5', // 'password123'
-    role: 'admin'
-  }
-];
+// JWT Secret - in production this should be in environment variables
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
-// POST /api/auth/login endpoint
+/**
+ * POST /api/auth/login
+ * Authenticates user and returns JWT token
+ */
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validate input
+    // Validate required fields
     if (!email || !password) {
       return res.status(400).json({
         error: 'Email and password are required'
@@ -32,14 +23,14 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user by email
-    const user = users.find(u => u.email === email);
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       return res.status(401).json({
         error: 'Invalid credentials'
       });
     }
 
-    // Validate password
+    // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({
@@ -48,25 +39,30 @@ router.post('/login', async (req, res) => {
     }
 
     // Generate JWT token with 24-hour expiration
+    const tokenPayload = {
+      userId: user._id,
+      email: user.email,
+      role: user.role || 'user' // Include user role in token
+    };
+
     const token = jwt.sign(
-      {
-        userId: user.id,
-        email: user.email,
-        role: user.role
-      },
-      process.env.JWT_SECRET || 'your-secret-key',
-      {
-        expiresIn: '24h'
+      tokenPayload,
+      JWT_SECRET,
+      { 
+        expiresIn: '24h', // Token expires after 24 hours
+        issuer: 'swarm-app',
+        audience: 'swarm-app-users'
       }
     );
 
     // Return successful response with token
     res.status(200).json({
-      token,
+      message: 'Login successful',
+      token: token,
       user: {
-        id: user.id,
+        id: user._id,
         email: user.email,
-        role: user.role
+        role: user.role || 'user'
       }
     });
 

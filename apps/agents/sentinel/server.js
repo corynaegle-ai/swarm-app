@@ -371,7 +371,8 @@ app.post('/verify', async (req, res) => {
       error: err.message,
       status: 'error'
     });
-    res.status(500).json(result);
+    // Return 200 with error status so caller can handle it gracefully instead of crashing
+    res.json(result);
   }
 });
 

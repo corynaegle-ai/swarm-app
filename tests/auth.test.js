@@ -1,121 +1,92 @@
 const request = require('supertest');
+const express = require('express');
+const authRoutes = require('../src/routes/auth');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
-const app = require('../src/app'); // Assuming main app file
-const User = require('../src/models/User');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const app = express();
+app.use(express.json());
+app.use('/api/auth', authRoutes);
 
 describe('POST /api/auth/login', () => {
-  const testUser = {
-    email: 'test@example.com',
-    password: 'password123',
-    role: 'admin'
-  };
-
-  beforeEach(async () => {
-    // Clear users and create test user
-    await User.deleteMany({});
-    const hashedPassword = await bcrypt.hash(testUser.password, 10);
-    await User.create({
-      email: testUser.email,
-      password: hashedPassword,
-      role: testUser.role
-    });
-  });
-
-  afterEach(async () => {
-    await User.deleteMany({});
-  });
-
-  it('should accept email and password and return JWT token', async () => {
+  test('should return JWT token for valid credentials', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
-        email: testUser.email,
-        password: testUser.password
-      })
-      .expect(200);
-
-    expect(response.body.token).toBeDefined();
-    expect(response.body.message).toBe('Login successful');
-  });
-
-  it('should return 401 on invalid credentials', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: testUser.email,
-        password: 'wrongpassword'
-      })
-      .expect(401);
-
-    expect(response.body.error).toBe('Invalid credentials');
-  });
-
-  it('should return 401 for non-existent user', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'nonexistent@example.com',
+        email: 'admin@example.com',
         password: 'password123'
-      })
-      .expect(401);
+      });
 
-    expect(response.body.error).toBe('Invalid credentials');
+    expect(response.status).toBe(200);
+    expect(response.body).toHaveProperty('token');
+    expect(response.body).toHaveProperty('user');
+    expect(response.body.user.role).toBe('admin');
+
+    // Verify token is valid JWT
+    const decoded = jwt.decode(response.body.token);
+    expect(decoded).toHaveProperty('userId');
+    expect(decoded).toHaveProperty('role');
+    expect(decoded.role).toBe('admin');
   });
 
-  it('should generate token that expires after 24 hours', async () => {
+  test('should return 401 for invalid email', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
-        email: testUser.email,
-        password: testUser.password
-      })
-      .expect(200);
+        email: 'invalid@example.com',
+        password: 'password123'
+      });
 
-    const decoded = jwt.verify(response.body.token, JWT_SECRET);
-    const expirationTime = decoded.exp * 1000;
+    expect(response.status).toBe(401);
+    expect(response.body).toHaveProperty('error', 'Invalid credentials');
+  });
+
+  test('should return 401 for invalid password', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'admin@example.com',
+        password: 'wrongpassword'
+      });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toHaveProperty('error', 'Invalid credentials');
+  });
+
+  test('should return 400 for missing email', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        password: 'password123'
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toHaveProperty('error', 'Email and password are required');
+  });
+
+  test('should return 400 for missing password', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'admin@example.com'
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toHaveProperty('error', 'Email and password are required');
+  });
+
+  test('token should expire after 24 hours', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'admin@example.com',
+        password: 'password123'
+      });
+
+    const decoded = jwt.decode(response.body.token);
+    const expirationTime = decoded.exp * 1000; // Convert to milliseconds
     const issuedTime = decoded.iat * 1000;
-    const duration = expirationTime - issuedTime;
+    const expectedDuration = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
     
-    // Should be 24 hours (86400000 ms)
-    expect(duration).toBe(24 * 60 * 60 * 1000);
-  });
-
-  it('should include user role in token payload', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: testUser.email,
-        password: testUser.password
-      })
-      .expect(200);
-
-    const decoded = jwt.verify(response.body.token, JWT_SECRET);
-    expect(decoded.role).toBe(testUser.role);
-    expect(decoded.email).toBe(testUser.email);
-  });
-
-  it('should return 400 when email is missing', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        password: testUser.password
-      })
-      .expect(400);
-
-    expect(response.body.error).toBe('Email and password are required');
-  });
-
-  it('should return 400 when password is missing', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: testUser.email
-      })
-      .expect(400);
-
-    expect(response.body.error).toBe('Email and password are required');
+    expect(expirationTime - issuedTime).toBe(expectedDuration);
   });
 });

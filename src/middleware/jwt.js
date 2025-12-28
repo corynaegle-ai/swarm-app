@@ -1,46 +1,22 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
-
-// JWT Secret - should match the one used in auth routes
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 /**
  * JWT Authentication Middleware
- * Verifies JWT token and adds user info to request object
+ * Verifies JWT tokens and adds user info to request
  */
-const authenticateToken = async (req, res, next) => {
-  try {
-    // Get token from Authorization header
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
-    if (!token) {
-      return res.status(401).json({
-        error: 'Access token required'
-      });
-    }
-
-    // Verify token
-    const decoded = jwt.verify(token, JWT_SECRET, {
-      issuer: 'swarm-app',
-      audience: 'swarm-app-users'
+  if (!token) {
+    return res.status(401).json({
+      error: 'Access token required'
     });
+  }
 
-    // Optional: Verify user still exists and is active
-    const user = await User.findById(decoded.userId);
-    if (!user) {
-      return res.status(401).json({
-        error: 'Invalid token - user not found'
-      });
-    }
-
-    // Add user info to request object
-    req.user = {
-      id: decoded.userId,
-      email: decoded.email,
-      role: decoded.role
-    };
-
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default-secret-for-dev');
+    req.user = decoded;
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
@@ -48,24 +24,18 @@ const authenticateToken = async (req, res, next) => {
         error: 'Token expired'
       });
     }
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        error: 'Invalid token'
-      });
-    }
     
-    console.error('JWT middleware error:', error);
-    return res.status(500).json({
-      error: 'Internal server error'
+    return res.status(403).json({
+      error: 'Invalid token'
     });
   }
 };
 
 /**
  * Role-based authorization middleware
- * @param {string|Array} allowedRoles - Role(s) that are allowed
+ * @param {string|array} allowedRoles - Role(s) that can access the route
  */
-const requireRole = (allowedRoles) => {
+const authorizeRole = (allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
@@ -86,7 +56,34 @@ const requireRole = (allowedRoles) => {
   };
 };
 
+/**
+ * Generate JWT token
+ * @param {object} payload - Token payload
+ * @param {string} expiresIn - Expiration time (default: 24h)
+ */
+const generateToken = (payload, expiresIn = '24h') => {
+  return jwt.sign(
+    payload,
+    process.env.JWT_SECRET || 'default-secret-for-dev',
+    { expiresIn }
+  );
+};
+
+/**
+ * Verify JWT token
+ * @param {string} token - JWT token to verify
+ */
+const verifyToken = (token) => {
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET || 'default-secret-for-dev');
+  } catch (error) {
+    throw error;
+  }
+};
+
 module.exports = {
   authenticateToken,
-  requireRole
+  authorizeRole,
+  generateToken,
+  verifyToken
 };

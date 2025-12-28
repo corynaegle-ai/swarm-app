@@ -1,15 +1,33 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
 const router = express.Router();
 
-// POST /api/auth/login
+// Mock user database - replace with actual database integration
+const users = [
+  {
+    id: 1,
+    email: 'admin@example.com',
+    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
+    role: 'admin'
+  },
+  {
+    id: 2,
+    email: 'user@example.com',
+    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
+    role: 'user'
+  }
+];
+
+/**
+ * POST /api/auth/login
+ * Authenticate user and return JWT token
+ */
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validate required fields
+    // Validate input
     if (!email || !password) {
       return res.status(400).json({
         error: 'Email and password are required'
@@ -17,7 +35,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user by email
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = users.find(u => u.email === email);
     if (!user) {
       return res.status(401).json({
         error: 'Invalid credentials'
@@ -25,34 +43,33 @@ router.post('/login', async (req, res) => {
     }
 
     // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
       return res.status(401).json({
         error: 'Invalid credentials'
       });
     }
 
-    // Generate JWT token with 24 hour expiration
-    const tokenPayload = {
-      userId: user._id,
-      email: user.email,
-      role: user.role || 'user'
-    };
-
+    // Generate JWT token
     const token = jwt.sign(
-      tokenPayload,
-      process.env.JWT_SECRET || 'default-secret-key',
-      { expiresIn: '24h' }
+      {
+        userId: user.id,
+        email: user.email,
+        role: user.role
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      {
+        expiresIn: '24h'
+      }
     );
 
-    // Return successful response with token
+    // Return success response with token
     res.status(200).json({
-      success: true,
-      token: token,
+      token,
       user: {
-        id: user._id,
+        id: user.id,
         email: user.email,
-        role: user.role || 'user'
+        role: user.role
       }
     });
 

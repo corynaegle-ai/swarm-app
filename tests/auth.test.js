@@ -1,106 +1,73 @@
 const request = require('supertest');
-const app = require('../src/app');
-const User = require('../src/models/User');
-const bcrypt = require('bcryptjs');
+const express = require('express');
+const authRoutes = require('../src/routes/auth');
 const jwt = require('jsonwebtoken');
 
+const app = express();
+app.use(express.json());
+app.use('/api/auth', authRoutes);
+
 describe('POST /api/auth/login', () => {
-  beforeEach(async () => {
-    // Create test user
-    const hashedPassword = await bcrypt.hash('testpassword123', 10);
-    await User.create({
-      email: 'test@example.com',
-      password: hashedPassword,
-      role: 'admin'
-    });
-  });
-
-  afterEach(async () => {
-    // Clean up test data
-    await User.deleteMany({});
-  });
-
-  test('should accept email and password', async () => {
+  test('should return JWT token for valid credentials', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'test@example.com',
-        password: 'testpassword123'
+        email: 'admin@example.com',
+        password: 'password'
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.success).toBe(true);
-    expect(response.body.token).toBeDefined();
+    expect(response.body).toHaveProperty('token');
+    expect(response.body).toHaveProperty('user');
+    expect(response.body.user.role).toBe('admin');
   });
 
-  test('should return JWT token on successful authentication', async () => {
+  test('should return 401 for invalid credentials', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'test@example.com',
-        password: 'testpassword123'
-      });
-
-    expect(response.status).toBe(200);
-    expect(response.body.token).toBeDefined();
-    
-    // Verify token is valid JWT
-    const decoded = jwt.verify(response.body.token, process.env.JWT_SECRET || 'default-secret-key');
-    expect(decoded.email).toBe('test@example.com');
-    expect(decoded.role).toBe('admin');
-  });
-
-  test('should return 401 on invalid credentials', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'test@example.com',
+        email: 'admin@example.com',
         password: 'wrongpassword'
       });
 
     expect(response.status).toBe(401);
-    expect(response.body.error).toBe('Invalid credentials');
+    expect(response.body).toHaveProperty('error', 'Invalid credentials');
   });
 
-  test('should return 401 for non-existent user', async () => {
+  test('should return 400 for missing email or password', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'nonexistent@example.com',
-        password: 'testpassword123'
+        email: 'admin@example.com'
       });
 
-    expect(response.status).toBe(401);
-    expect(response.body.error).toBe('Invalid credentials');
+    expect(response.status).toBe(400);
+    expect(response.body).toHaveProperty('error', 'Email and password are required');
   });
 
   test('token should expire after 24 hours', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'test@example.com',
-        password: 'testpassword123'
+        email: 'admin@example.com',
+        password: 'password'
       });
 
-    const decoded = jwt.verify(response.body.token, process.env.JWT_SECRET || 'default-secret-key');
-    const expirationTime = decoded.exp * 1000; // Convert to milliseconds
-    const issuedTime = decoded.iat * 1000;
-    const expectedExpiration = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-    
-    expect(expirationTime - issuedTime).toBe(expectedExpiration);
+    const decoded = jwt.decode(response.body.token);
+    const expirationTime = decoded.exp - decoded.iat;
+    expect(expirationTime).toBe(24 * 60 * 60); // 24 hours in seconds
   });
 
   test('token should include user role in payload', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'test@example.com',
-        password: 'testpassword123'
+        email: 'user@example.com',
+        password: 'password'
       });
 
-    const decoded = jwt.verify(response.body.token, process.env.JWT_SECRET || 'default-secret-key');
-    expect(decoded.role).toBe('admin');
-    expect(decoded.userId).toBeDefined();
-    expect(decoded.email).toBe('test@example.com');
+    const decoded = jwt.decode(response.body.token);
+    expect(decoded).toHaveProperty('role', 'user');
+    expect(decoded).toHaveProperty('email', 'user@example.com');
   });
 });

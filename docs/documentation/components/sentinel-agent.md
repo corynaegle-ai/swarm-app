@@ -31,9 +31,9 @@
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `sentinel.js` | `/opt/swarm-verifier/lib/phases/sentinel.js` | Phase execution logic |
-| `sentinel.md` | `/opt/swarm-verifier/personas/sentinel.md` | LLM persona definition |
-| `server.js` | `/opt/swarm-verifier/server.js` | Verifier API server |
+| `sentinel.js` | `/opt/swarm-app/apps/agents/sentinel/lib/phases/sentinel.js` | Phase execution logic |
+| `sentinel.md` | `/opt/swarm-app/apps/agents/sentinel/personas/sentinel.md` | LLM persona definition |
+| `server.js` | `/opt/swarm-app/apps/agents/sentinel/server.js` | Verifier API server |
 
 ## How It Works
 
@@ -147,12 +147,12 @@ SENTINEL receives:
 ### PM2 Configuration
 
 ```javascript
-// /opt/swarm-verifier/pm2.config.js
+// /opt/swarm-app/apps/agents/sentinel/pm2.config.js
 module.exports = {
   apps: [{
-    name: 'swarm-verifier',
+    name: 'swarm-sentinel',
     script: 'server.js',
-    cwd: '/opt/swarm-verifier',
+    cwd: '/opt/swarm-app/apps/agents/sentinel',
     instances: 1,
     env: {
       NODE_ENV: 'production',
@@ -254,10 +254,10 @@ Check SENTINEL health:
 
 ```bash
 # Service status
-pm2 status swarm-verifier
+pm2 status swarm-sentinel
 
 # Recent logs
-pm2 logs swarm-verifier --lines 50
+pm2 logs swarm-sentinel --lines 50
 
 # API health
 curl http://localhost:8090/health

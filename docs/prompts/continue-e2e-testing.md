@@ -25,7 +25,7 @@ You are a master systems architect continuing E2E testing of the Swarm Build Fea
    swarm-engine (PID 643440) - PostgreSQL connected
    swarm-platform-dev (port 3001)
    swarm-dashboard-dev (port 3000)  
-   swarm-verifier (port 8090)
+   swarm-sentinel (port 8090)
    deploy-agent (port 3457)
    mcp-factory (port 3456)
    ```

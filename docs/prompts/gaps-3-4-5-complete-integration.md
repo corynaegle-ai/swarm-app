@@ -22,7 +22,7 @@ You are a master systems architect working on Project Swarm. GAPs #1 and #2 are 
 |---------|------|--------|
 | swarm-platform | 3001 | ✅ Running |
 | swarm-engine | N/A | ✅ Running |
-| swarm-verifier | 8090 | ✅ Running |
+| swarm-sentinel | 8090 | ✅ Running |
 | deploy-agent | 3457 | ✅ Running |
 
 ---
@@ -107,7 +107,7 @@ async function createPR(ticketId, branchName, repoUrl) {
 **Verification**:
 ```bash
 # Watch verifier logs during test
-pm2 logs swarm-verifier --lines 20
+pm2 logs swarm-sentinel --lines 20
 
 # Check if PRs are created
 gh pr list --repo <test-repo>

@@ -18,7 +18,7 @@ You are implementing the Agent-Foreman pattern adoption for Swarm. This adds str
 
 **Target State**:
 - Tickets include machine-parseable acceptance criteria (JSON)
-- New `swarm-verifier` service validates code against criteria
+- New `swarm-sentinel` service validates code against criteria
 - Worker agents run verify loop (max 3 attempts) before PR creation
 - Failed verifications escalate to human review
 
@@ -57,11 +57,11 @@ CREATE TABLE IF NOT EXISTS ticket_file_map (
 
 ### Phase 2: Verifier Service
 
-**Location**: Create `/opt/swarm-verifier/`
+**Location**: Create `/opt/swarm-app/apps/agents/sentinel/`
 
 1. **Project structure**:
 ```
-/opt/swarm-verifier/
+/opt/swarm-app/apps/agents/sentinel/
 ├── package.json
 ├── server.js           # Express server on port 8090
 ├── lib/
@@ -313,7 +313,7 @@ curl -X POST http://localhost:8080/tickets \
 ### Test Phase 2 (Verifier)
 ```bash
 # Start verifier service
-cd /opt/swarm-verifier
+cd /opt/swarm-app/apps/agents/sentinel
 npm install
 pm2 start pm2.config.js
 
@@ -355,15 +355,15 @@ curl -X POST http://localhost:8090/verify \
 ## File Checklist
 
 ### Create New
-- [ ] `/opt/swarm-verifier/package.json`
-- [ ] `/opt/swarm-verifier/server.js`
-- [ ] `/opt/swarm-verifier/lib/executor.js`
-- [ ] `/opt/swarm-verifier/lib/checks/http.js`
-- [ ] `/opt/swarm-verifier/lib/checks/file.js`
-- [ ] `/opt/swarm-verifier/lib/checks/pattern.js`
-- [ ] `/opt/swarm-verifier/lib/checks/test.js`
-- [ ] `/opt/swarm-verifier/lib/reporter.js`
-- [ ] `/opt/swarm-verifier/pm2.config.js`
+- [ ] `/opt/swarm-app/apps/agents/sentinel/package.json`
+- [ ] `/opt/swarm-app/apps/agents/sentinel/server.js`
+- [ ] `/opt/swarm-app/apps/agents/sentinel/lib/executor.js`
+- [ ] `/opt/swarm-app/apps/agents/sentinel/lib/checks/http.js`
+- [ ] `/opt/swarm-app/apps/agents/sentinel/lib/checks/file.js`
+- [ ] `/opt/swarm-app/apps/agents/sentinel/lib/checks/pattern.js`
+- [ ] `/opt/swarm-app/apps/agents/sentinel/lib/checks/test.js`
+- [ ] `/opt/swarm-app/apps/agents/sentinel/lib/reporter.js`
+- [ ] `/opt/swarm-app/apps/agents/sentinel/pm2.config.js`
 
 ### Modify Existing
 - [ ] `/opt/swarm-tickets/migrations/003_acceptance_criteria.sql`
@@ -376,7 +376,7 @@ curl -X POST http://localhost:8090/verify \
 ## Environment Variables
 
 ```bash
-# Add to /opt/swarm-verifier/.env
+# Add to /opt/swarm-app/apps/agents/sentinel/.env
 PORT=8090
 TICKETS_API_URL=http://localhost:8080
 REPOS_BASE_PATH=/tmp/swarm-repos
@@ -392,7 +392,7 @@ MAX_VERIFY_ATTEMPTS=3
 ## Rollback Plan
 
 If issues arise:
-1. Stop verifier: `pm2 stop swarm-verifier`
+1. Stop verifier: `pm2 stop swarm-sentinel`
 2. Revert agent runner: `git checkout HEAD~1 -- lib/agent-runner.js`
 3. Schema columns are additive (no data loss) - can ignore until fixed
 

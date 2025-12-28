@@ -48,7 +48,7 @@ Restart the relevant PM2 services to apply changes.
 **Common Services:**
 - `swarm-platform-dev` (API/backend)
 - `swarm-coder-agent` (Forge)
-- `swarm-verifier` (Sentinel)
+- `swarm-sentinel` (Sentinel)
 - `swarm-rag` (RAG Service)
 - `swarm-dashboard-dev` (Dashboard UI)
 

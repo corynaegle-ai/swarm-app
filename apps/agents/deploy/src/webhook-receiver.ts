@@ -18,7 +18,7 @@ import { logger } from './logger';
 const REPO_TO_SERVICE: Record<string, string> = {
   'swarm-platform': 'swarm-platform',
   'swarm-mcp-factory': 'swarm-mcp-factory',
-  'swarm-verifier': 'swarm-verifier',
+  'swarm-sentinel': 'swarm-sentinel',
   'swarm-tickets': 'swarm-platform',
 };
 

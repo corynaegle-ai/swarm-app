@@ -301,7 +301,7 @@ crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512')
 ## Repositories Still To Review
 - [ ] /opt/swarm-mcp-factory
 - [ ] /opt/swarm-registry  
-- [ ] /opt/swarm-verifier
+- [ ] /opt/swarm-app/apps/agents/sentinel
 - [ ] /opt/swarm-agents
 
 
@@ -395,7 +395,7 @@ crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512')
 ## Repositories Still To Review
 - [ ] /opt/swarm-mcp-factory
 - [ ] /opt/swarm-registry  
-- [ ] /opt/swarm-verifier
+- [ ] /opt/swarm-app/apps/agents/sentinel
 - [ ] /opt/swarm-agents
 
 
@@ -452,7 +452,7 @@ const outputPath = process.argv[3] || '/tmp/output.json';
 **Fix:** Validate paths are within expected directory
 
 #### Issue 64: GIT_SSH_COMMAND Injection Risk
-**Location:** `/opt/swarm-verifier/lib/git.js`
+**Location:** `/opt/swarm-app/apps/agents/sentinel/lib/git.js`
 ```javascript
 process.env.GIT_SSH_COMMAND = `ssh -i ${config.GIT_SSH_KEY_PATH} ...`;
 ```
@@ -468,7 +468,7 @@ process.env.GIT_SSH_COMMAND = `ssh -i ${config.GIT_SSH_KEY_PATH} ...`;
 | swarm-dashboard | 1 | 3 | 2 | - |
 | swarm-platform | 2 | 1 | 2 | - |
 | swarm-mcp-factory | - | 2 | 1 | - |
-| swarm-verifier | - | - | 1 | - |
+| swarm-sentinel | - | - | 1 | - |
 | swarm-agents | - | - | 2 | - |
 | **Subtotal (new)** | **3** | **6** | **8** | **0** |
 | Previous review | 8 | 14 | 16 | 9 |

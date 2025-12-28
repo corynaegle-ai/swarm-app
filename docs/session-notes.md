@@ -12,7 +12,7 @@
 | **Tickets DB** | `/opt/swarm-platform/data/swarm.db` |
 | **Registry DB** | `/opt/swarm-registry/registry.db` |
 | **Platform** | `/opt/swarm-platform` (PM2: swarm-platform) |
-| **Verifier** | `/opt/swarm-verifier` (PM2: swarm-verifier, port 8090) |
+| **Verifier** | `/opt/swarm-app/apps/agents/sentinel` (PM2: swarm-sentinel, port 8090) |
 | **Specs Repo** | `/opt/swarm-app/docs` → `monorepo/docs` |
 
 ### SSH Template

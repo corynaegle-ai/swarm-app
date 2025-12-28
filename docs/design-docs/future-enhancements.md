@@ -6,8 +6,8 @@ Improvements identified during development that are not blocking E2E but would i
 
 ## Sentinel Agent - Tiered Review Passes
 
-**Component:** swarm-verifier  
-**File:** /opt/swarm-verifier/lib/phases/sentinel.js  
+**Component:** swarm-sentinel  
+**File:** /opt/swarm-app/apps/agents/sentinel/lib/phases/sentinel.js  
 **Priority:** Low (not blocking E2E)
 
 ### Current State

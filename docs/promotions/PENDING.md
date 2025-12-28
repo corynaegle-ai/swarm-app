@@ -99,14 +99,14 @@ pm2 restart deploy-agent
 
 ### Overview
 
-Added deployment manifests for mcp-factory and swarm-verifier services. Deploy agent now supports automated deployments for all 4 core services.
+Added deployment manifests for mcp-factory and swarm-sentinel services. Deploy agent now supports automated deployments for all 4 core services.
 
 ### New Manifests
 
 | Service | Port | PM2 Name | Health Check |
 |---------|------|----------|--------------|
 | mcp-factory | 3456 | mcp-factory | GET /api/health |
-| swarm-verifier | 8090 | swarm-verifier | GET /health |
+| swarm-sentinel | 8090 | swarm-sentinel | GET /health |
 
 ### Files Added
 
@@ -115,21 +115,21 @@ Added deployment manifests for mcp-factory and swarm-verifier services. Deploy a
    - Path: /opt/swarm-mcp-factory
    - Build: npm ci
 
-2. `/opt/swarm-deploy/manifests/swarm-verifier.yaml`
-   - Repository: corynaegle-ai/swarm-verifier
-   - Path: /opt/swarm-verifier
+2. `/opt/swarm-deploy/manifests/swarm-sentinel.yaml`
+   - Repository: corynaegle-ai/swarm-sentinel
+   - Path: /opt/swarm-app/apps/agents/sentinel
    - Build: npm ci
 
 ### Testing Completed on DEV
 - [x] Deploy agent loads all 4 manifests
-- [x] GET /api/manifests returns: mcp-factory, swarm-dashboard, swarm-platform, swarm-verifier
+- [x] GET /api/manifests returns: mcp-factory, swarm-dashboard, swarm-platform, swarm-sentinel
 - [x] Health endpoints verified for both services
 
 ### Promotion Commands
 ```bash
 # Copy manifests to PROD
 scp /opt/swarm-deploy/manifests/mcp-factory.yaml root@146.190.35.235:/opt/swarm-deploy/manifests/
-scp /opt/swarm-deploy/manifests/swarm-verifier.yaml root@146.190.35.235:/opt/swarm-deploy/manifests/
+scp /opt/swarm-deploy/manifests/swarm-sentinel.yaml root@146.190.35.235:/opt/swarm-deploy/manifests/
 
 # Restart deploy-agent on PROD
 pm2 restart deploy-agent
@@ -141,7 +141,7 @@ curl http://localhost:3457/api/manifests
 ### Rollback
 ```bash
 rm /opt/swarm-deploy/manifests/mcp-factory.yaml
-rm /opt/swarm-deploy/manifests/swarm-verifier.yaml
+rm /opt/swarm-deploy/manifests/swarm-sentinel.yaml
 pm2 restart deploy-agent
 ```
 

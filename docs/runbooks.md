@@ -220,7 +220,7 @@ gh pr list --repo corynaegle-ai/swarm-agent \
   --state closed --label "verification-failed" --limit 10
 
 # 3. Check for pattern in failures
-pm2 logs swarm-verifier --lines 100 | grep -i "failed\|error"
+pm2 logs swarm-sentinel --lines 100 | grep -i "failed\|error"
 ```
 
 ### Resolution

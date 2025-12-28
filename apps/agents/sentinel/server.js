@@ -1,5 +1,5 @@
 /**
- * Swarm Verifier Service
+ * Swarm Sentinel Service
  * Unified verification for Swarm worker agents
  * 
  * Phases:
@@ -121,7 +121,7 @@ app.get('/health', async (req, res) => {
 
   res.json({
     status: 'healthy',
-    service: 'swarm-verifier',
+    service: 'swarm-sentinel',
     database: dbStatus,
     uptime_seconds: Math.floor(process.uptime())
   });
@@ -493,7 +493,7 @@ async function logActivity(ticketId, category, message, metadata = {}) {
 // ============================================================================
 
 app.listen(config.PORT, () => {
-  console.log(`Swarm Verifier running on port ${config.PORT}`);
+  console.log(`Swarm Sentinel running on port ${config.PORT}`);
   console.log(`Repos directory: ${config.REPOS_BASE_PATH}`);
   // Removed DB_PATH log
 });

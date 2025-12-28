@@ -1,14 +1,14 @@
-# Swarm Verifier - Deployment Manifest
+# Swarm Sentinel - Deployment Manifest
 
 service:
-  name: swarm-verifier
-  description: "Code verification and validation service"
-  pm2_name: swarm-verifier
+  name: swarm-sentinel
+  description: "Sentinel verification and code review service"
+  pm2_name: swarm-sentinel
   port: 8090
   
 repository:
-  path: /opt/swarm-verifier
-  github: corynaegle-ai/swarm-verifier
+  path: /opt/swarm-app/apps/agents/sentinel
+  github: corynaegle-ai/swarm-app
   branch: main
   
 environment:
@@ -22,12 +22,12 @@ build:
   commands:
     - npm ci
   timeout: 120
-  working_dir: /opt/swarm-verifier
+  working_dir: /opt/swarm-app/apps/agents/sentinel
   
 deploy:
   strategy: replace
   commands:
-    - pm2 restart swarm-verifier --update-env
+    - pm2 restart swarm-sentinel --update-env
   timeout: 60
   
 health_check:
@@ -45,7 +45,7 @@ rollback:
     - git stash
     - git checkout HEAD^
     - npm ci
-    - pm2 restart swarm-verifier --update-env
+    - pm2 restart swarm-sentinel --update-env
     
 dependencies:
   services: []

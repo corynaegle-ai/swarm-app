@@ -131,13 +131,13 @@ node apps/platform/tests/verify-mocks.js (deleted after verification)
 ### 2. Missing Agent Activity Logs
 **Problem**: Activity logs for Verifier/Sentinel agent were missing from Dashboard (e.g., for `TKT-814ACEDC`).
 **Root Cause**:
-- `swarm-verifier` (Sentinel) service logged events only to a local SQLite database (`verification_attempts`) and did NOT call the Platform API (`/api/tickets/:id/activity`).
+- `swarm-sentinel` (Sentinel) service logged events only to a local SQLite database (`verification_attempts`) and did NOT call the Platform API (`/api/tickets/:id/activity`).
 - Dashboard relies on `ticket_events` table in Platform DB, which was empty for verifier actions.
 **Solution**:
-- Patched `/opt/swarm-verifier/server.js` on DEV.
+- Patched `/opt/swarm-app/apps/agents/sentinel/server.js` on DEV.
 - Added `logActivity` helper function using Platform API.
 - Injected `logActivity` calls at start, phase completion/failure, and final verification key points.
-- Restarted `swarm-verifier` service.
+- Restarted `swarm-sentinel` service.
 
 ### 3. Rate Limit Removal
 **Problem**: User encountered "Too many requests" on Tickets/Kanban pages.

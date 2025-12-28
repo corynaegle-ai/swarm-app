@@ -261,7 +261,7 @@ async function createDeploymentTicket(deployment: Deployment): Promise<string> {
 │   ├── swarm-dashboard.yaml
 │   ├── swarm-platform.yaml
 │   ├── swarm-mcp-factory.yaml
-│   └── swarm-verifier.yaml
+│   └── swarm-sentinel.yaml
 ├── data/
 │   └── deployments.db        # SQLite database
 ├── logs/

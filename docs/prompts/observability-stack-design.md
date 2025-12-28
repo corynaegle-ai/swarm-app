@@ -62,7 +62,7 @@ You are a master systems architect designing the observability stack for **Proje
 ```bash
 # Current logging approach
 pm2 logs swarm-platform     # Stdout/stderr to files
-pm2 logs swarm-verifier     # Basic console.log statements
+pm2 logs swarm-sentinel     # Basic console.log statements
 
 # Log locations
 /root/.pm2/logs/swarm-platform-out.log

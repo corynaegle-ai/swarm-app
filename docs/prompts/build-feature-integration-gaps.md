@@ -23,7 +23,7 @@ You are a master systems architect working on Project Swarm - a distributed AI a
 |---------|------|----------|
 | swarm-platform | 3001 | /opt/swarm-platform |
 | swarm-dashboard | 3000 | /opt/swarm-dashboard |
-| swarm-verifier | 8090 | /opt/swarm-verifier |
+| swarm-sentinel | 8090 | /opt/swarm-app/apps/agents/sentinel |
 | deploy-agent | 3457 | /opt/swarm-deploy |
 | mcp-factory | 3456 | /opt/swarm-mcp-factory |
 | **swarm-engine** | N/A | /opt/swarm/engine (NOT RUNNING) |

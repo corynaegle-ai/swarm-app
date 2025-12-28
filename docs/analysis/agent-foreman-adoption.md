@@ -165,7 +165,7 @@ interface ManualCheck {
 
 ### Phase 2: Verification Engine
 
-#### 2.1 New Component: `swarm-verifier`
+#### 2.1 New Component: `swarm-sentinel`
 
 A verification service that runs acceptance criteria checks:
 
@@ -378,7 +378,7 @@ async function detectFileImpact(modifiedFiles: string[]) {
 - [ ] Update ticket API to accept acceptance_criteria
 
 ### Stage 2: Verifier Service (Week 2)
-- [ ] Build swarm-verifier service
+- [ ] Build swarm-sentinel service
 - [ ] Implement check executors (http, file, pattern, test)
 - [ ] Add /api/verify endpoint
 

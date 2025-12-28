@@ -297,7 +297,7 @@ app.use(errorLogger);      // Last: catch errors
     },
     "service": {
       "type": "string",
-      "description": "Service name (swarm-platform, swarm-verifier, forge-agent)"
+      "description": "Service name (swarm-platform, swarm-sentinel, forge-agent)"
     },
     "message": {
       "type": "string",

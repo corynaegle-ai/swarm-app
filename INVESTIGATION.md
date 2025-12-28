@@ -548,7 +548,7 @@ After comprehensive search of the codebase, **there is NO mechanism to assign a 
 
 SENTINEL exists as a **verification phase** within the verifier service, NOT as an agent that claims tickets:
 
-**Location:** `/opt/swarm-verifier/lib/phases/sentinel.js` (external service)
+**Location:** `/opt/swarm-app/apps/agents/sentinel/lib/phases/sentinel.js` (external service)
 
 ```javascript
 // From docs/engine-pg.js lines 624-631

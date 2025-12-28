@@ -22,7 +22,7 @@ import pg from 'pg';
 import Database from 'better-sqlite3';
 import { StepExecutor } from './executor.js';
 import { WorkflowDispatcher } from './dispatcher.js';
-import { verify, formatFeedbackForRetry, MAX_ATTEMPTS, isVerifierHealthy } from './verifier-client.js';
+import { verify, formatFeedbackForRetry, MAX_ATTEMPTS, isVerifierHealthy } from './sentinel-client.js';
 import { execSync } from 'child_process';
 
 const { Pool } = pg;

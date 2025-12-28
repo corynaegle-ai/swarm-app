@@ -22,7 +22,7 @@ You are a master systems architect continuing Project Swarm integration work. GA
 |---------|------|--------|
 | swarm-platform | 3001 | ✅ Running |
 | swarm-engine | N/A | ✅ Running |
-| swarm-verifier | 8090 | ✅ Running |
+| swarm-sentinel | 8090 | ✅ Running |
 | deploy-agent | 3457 | ✅ Running |
 
 ---
@@ -115,7 +115,7 @@ async function createPR(ticketId, branchName, repoUrl) {
 ### Verification
 ```bash
 # Watch verifier logs during test
-pm2 logs swarm-verifier --lines 20
+pm2 logs swarm-sentinel --lines 20
 
 # Check engine logs
 pm2 logs swarm-engine --lines 20
@@ -206,7 +206,7 @@ ssh -i ~/.ssh/swarm_key root@134.199.235.140 "source /root/.nvm/nvm.sh && nvm us
 
 # View logs
 pm2 logs swarm-engine --lines 20 --nostream
-pm2 logs swarm-verifier --lines 20 --nostream
+pm2 logs swarm-sentinel --lines 20 --nostream
 
 # Restart services
 pm2 restart swarm-engine

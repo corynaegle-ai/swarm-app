@@ -53,7 +53,7 @@ module.exports = {
             }
         },
         {
-            name: 'swarm-verifier',
+            name: 'swarm-sentinel',
             cwd: '/opt/swarm-app/apps/agents/sentinel',
             script: 'server.js',
             env_file: '/opt/swarm-app/apps/platform/.env',

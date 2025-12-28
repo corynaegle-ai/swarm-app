@@ -12,7 +12,7 @@ import { VMPool } from './vm-pool.js';
 import { ArtifactStore } from './artifact-store.js';
 import { StepExecutor } from './executor.js';
 import { WorkflowDispatcher } from './dispatcher.js';
-import { verify, formatFeedbackForRetry, isVerifierHealthy, MAX_ATTEMPTS } from './verifier-client.js';
+import { verify, formatFeedbackForRetry, isVerifierHealthy, MAX_ATTEMPTS } from './sentinel-client.js';
 
 // Engine states
 const ENGINE_STATE = {

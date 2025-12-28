@@ -1,33 +1,15 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 const router = express.Router();
 
-// Mock user data - in production this would come from a database
-const users = [
-  {
-    id: 1,
-    email: 'admin@example.com',
-    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
-    role: 'admin'
-  },
-  {
-    id: 2,
-    email: 'user@example.com',
-    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
-    role: 'user'
-  }
-];
-
-/**
- * POST /api/auth/login
- * Authenticates user and returns JWT token
- */
+// POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validate input
+    // Validate required fields
     if (!email || !password) {
       return res.status(400).json({
         error: 'Email and password are required'
@@ -35,7 +17,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user by email
-    const user = users.find(u => u.email === email);
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       return res.status(401).json({
         error: 'Invalid credentials'
@@ -51,26 +33,26 @@ router.post('/login', async (req, res) => {
     }
 
     // Generate JWT token with 24 hour expiration
+    const tokenPayload = {
+      userId: user._id,
+      email: user.email,
+      role: user.role || 'user'
+    };
+
     const token = jwt.sign(
-      {
-        userId: user.id,
-        email: user.email,
-        role: user.role
-      },
-      process.env.JWT_SECRET || 'your-secret-key',
-      {
-        expiresIn: '24h'
-      }
+      tokenPayload,
+      process.env.JWT_SECRET || 'default-secret-key',
+      { expiresIn: '24h' }
     );
 
-    // Return success response with token
-    res.json({
+    // Return successful response with token
+    res.status(200).json({
       success: true,
-      token,
+      token: token,
       user: {
-        id: user.id,
+        id: user._id,
         email: user.email,
-        role: user.role
+        role: user.role || 'user'
       }
     });
 

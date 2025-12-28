@@ -140,8 +140,10 @@ function extractSubcategory(msg, category) {
   };
 
   const catPatterns = patterns[category] || {};
+  if (!catPatterns) return 'general'; // Safety check
+
   for (const [sub, pattern] of Object.entries(catPatterns)) {
-    if (pattern.test(msg)) return sub;
+    if (pattern && pattern.test && pattern.test(msg)) return sub;
   }
   return 'general';
 }

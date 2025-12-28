@@ -39,6 +39,10 @@ const ERROR_PATTERNS = {
   ],
   timeout: [
     /timeout/i, /timed out/i, /deadline exceeded/i
+  ],
+  security: [
+    /SECURITY VULNERABILITY/i, /Hardcoded/i, /exposed password/i,
+    /critical security risk/i, /security flaw/i
   ]
 };
 
@@ -81,6 +85,11 @@ const RETRY_STRATEGIES = {
     maxRetries: 0,
     backoffType: 'none',
     baseDelayMs: 0
+  },
+  security: {
+    maxRetries: 3,
+    backoffType: 'linear',
+    baseDelayMs: 5000
   }
 };
 
@@ -125,7 +134,9 @@ function extractSubcategory(msg, category) {
     runtime: { file: /ENOENT|file/i, permission: /EACCES|EPERM/i },
     api: { auth: /401|403|auth/i, rate: /429|rate/i, network: /network/i },
     context: { tokens: /token/i },
-    timeout: { execution: /execution/i }
+    context: { tokens: /token/i },
+    timeout: { execution: /execution/i },
+    security: { secrets: /Hardcoded|password|secret/i, vuln: /VULNERABILITY/i }
   };
 
   const catPatterns = patterns[category] || {};

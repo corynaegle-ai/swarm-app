@@ -1,8 +1,12 @@
 const express = require('express');
+const dbManager = require('./database/init');
 const authRoutes = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize database
+dbManager.init('./swarm.db');
 
 // Middleware
 app.use(express.json());
@@ -12,18 +16,17 @@ app.use('/api/auth', authRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
 
 // 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+app.use('*', (req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
 });
 
 if (require.main === module) {

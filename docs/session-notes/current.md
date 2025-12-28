@@ -146,3 +146,24 @@ node apps/platform/tests/verify-mocks.js (deleted after verification)
 - Updated `apps/platform/server.js` on DEV.
 - Removed `apiLimiter` middleware from `/api/tickets` and `/api/backlog` routes.
 - Restarted platform service.
+
+---
+
+## Session: December 27, 2024 - Display RAG Info on Dashboard
+
+### Status: ✅ COMPLETED
+
+---
+
+## Fix Summary
+
+### 1. Dashboard RAG Context
+**Problem**: Users could not see what RAG context (files, snippets) was being used by the Forge Agent, making it hard to verify if the agent had the right information.
+**Root Cause**: `rag_context` data existed in the database but was not exposed in the Dashboard UI.
+**Solution**:
+- Updated `apps/dashboard/src/pages/Tickets.jsx` to render a new "🤖 RAG Context" section in the ticket detail modal.
+- Added display for:
+  - Files to Modify/Create
+  - Reference Code Snippets (collapsible)
+  - Implementation Notes
+- Updated `apps/dashboard/src/pages/Tickets.css` with dark-mode compatible styles for the new section.

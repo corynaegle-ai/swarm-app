@@ -7,7 +7,7 @@ const https = require('https');
 
 // Reuse platform key if available, or allow local override
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const DEFAULT_MODEL = 'claude-3-haiku-20240307';
+const DEFAULT_MODEL = 'claude-sonnet-4-5-20250929';
 
 /**
  * Send chat completion request to Claude

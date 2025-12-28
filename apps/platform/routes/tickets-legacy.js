@@ -346,6 +346,77 @@ router.post('/complete', async (req, res) => {
             } catch (err) {
               console.error(`[Swarm Protocol] Handoff failed: ${err.message}`);
             }
+          } else {
+            // Handle Verification Failure (retry or hold)
+            console.log(`[Swarm Protocol] Verification failed for ${ticket_id}:`, data.status);
+            try {
+              const agentLearning = require('../lib/agent-learning.js');
+
+              // Get current ticket state for retry count
+              const ticket = await queryOne(
+                'SELECT rejection_count, retry_count, retry_strategy FROM tickets WHERE id = $1',
+                [ticket_id]
+              );
+
+              if (ticket) {
+                const currentRetryCount = ticket.retry_count || 0;
+                const newRejectionCount = (ticket.rejection_count || 0) + 1;
+
+                // Construct error message from feedback
+                const feedback = (data.feedback_for_agent || []).join('\n') || data.error || 'Verification failed';
+                const errorMessage = `Sentinel Verification Failed: ${data.sentinel_decision || 'UNKNOWN'}\n${feedback}`;
+
+                // Calculate retry strategy
+                const retryDecision = agentLearning.shouldRetryTicket(errorMessage, currentRetryCount);
+                const { shouldRetry, classification, strategy, nextDelay, attemptsRemaining } = retryDecision;
+
+                const newState = shouldRetry ? 'ready' : 'on_hold';
+
+                const holdReason = !shouldRetry ?
+                  `Max retries exceeded for verified failure (${strategy.maxRetries} attempts)` :
+                  null;
+
+                const logEntry = `[${new Date().toISOString()}] Verification Failed (attempt ${currentRetryCount + 1}): ${data.sentinel_decision}\n${feedback}\n`;
+
+                const retryStrategyJson = JSON.stringify({
+                  errorCategory: classification.category,
+                  errorSubcategory: classification.subcategory,
+                  maxRetries: strategy.maxRetries,
+                  backoffType: strategy.backoffType,
+                  nextDelayMs: nextDelay,
+                  attemptsRemaining
+                });
+
+                await execute(`
+                  UPDATE tickets
+                  SET state = $1,
+                      assignee_id = NULL,
+                      assignee_type = NULL,
+                      vm_id = NULL,
+                      rejection_count = $2,
+                      retry_count = $3,
+                      retry_strategy = $4,
+                      hold_reason = $5,
+                      error = $6,
+                      progress_log = COALESCE(progress_log, '') || $7,
+                      verification_status = 'failed'
+                  WHERE id = $8
+                `, [
+                  newState,
+                  newRejectionCount,
+                  currentRetryCount + 1,
+                  retryStrategyJson,
+                  holdReason,
+                  errorMessage,
+                  logEntry,
+                  ticket_id
+                ]);
+
+                console.log(`[Swarm Protocol] Verification failure handled. Ticket ${ticket_id} moved to ${newState}`);
+              }
+            } catch (err) {
+              console.error(`[Swarm Protocol] Failed verification handling error: ${err.message}`);
+            }
           }
         })
         .catch(err => console.error(`[Swarm Protocol] Sentinel Trigger FAILED: ${err.message}`));

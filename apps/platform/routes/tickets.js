@@ -250,6 +250,7 @@ router.patch('/:id', requireAuth, requireTenant, requirePermission('manage_ticke
 
     // Broadcast to tenant
     broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'edited' });
+    broadcast.ticketUpdate(updatedTicket.id, updatedTicket.state, { projectId: updatedTicket.project_id });
 
     res.json({ ticket: updatedTicket, event_id: eventResult?.id || null, changes: Object.keys(changes) });
   } catch (err) {
@@ -294,6 +295,7 @@ router.post('/:id/requeue', requireAuth, requireTenant, requirePermission('manag
     const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [id]);
 
     broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'requeued' });
+    broadcast.ticketUpdate(updatedTicket.id, updatedTicket.state, { projectId: updatedTicket.project_id });
 
     res.json({ ticket: updatedTicket, previous_state: previousState });
   } catch (err) {
@@ -436,6 +438,7 @@ router.put('/:id', requireAuth, requireTenant, requirePermission('manage_tickets
 
           const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [req.params.id]);
           broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'retried' });
+    broadcast.ticketUpdate(updatedTicket.id, updatedTicket.state, { projectId: updatedTicket.project_id });
 
           return res.json({
             success: true,
@@ -477,6 +480,7 @@ router.put('/:id', requireAuth, requireTenant, requirePermission('manage_tickets
 
     const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [req.params.id]);
     broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'updated' });
+    broadcast.ticketUpdate(updatedTicket.id, updatedTicket.state, { projectId: updatedTicket.project_id });
 
     res.json({ success: true });
   } catch (err) {
@@ -499,6 +503,7 @@ router.delete('/:id', requireAuth, requireTenant, requirePermission('manage_tick
     await execute('DELETE FROM tickets WHERE id = $1', [req.params.id]);
     const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [req.params.id]);
     broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'updated' });
+    broadcast.ticketUpdate(updatedTicket.id, updatedTicket.state, { projectId: updatedTicket.project_id });
 
     res.json({ success: true });
   } catch (err) {
@@ -606,6 +611,7 @@ router.post('/:id/verify', requireAuth, requireTenant, requirePermission('manage
           await logProgress(id, 'verification_failed_retry', `Verification failed, auto-retrying in ${retryDecision.nextDelay}ms. Reason: ${reason}`);
           const updatedTicket = await queryOne('SELECT * FROM tickets WHERE id = $1', [id]);
           broadcast.toTenant(req.tenantId, 'ticket:update', { ticket: updatedTicket, action: 'retried' });
+    broadcast.ticketUpdate(updatedTicket.id, updatedTicket.state, { projectId: updatedTicket.project_id });
 
           res.json({ success: true, state: 'pending', verification_status: 'failed', retried: true });
         } else {

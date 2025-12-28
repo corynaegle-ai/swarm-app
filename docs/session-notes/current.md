@@ -167,3 +167,13 @@ node apps/platform/tests/verify-mocks.js (deleted after verification)
   - Reference Code Snippets (collapsible)
   - Implementation Notes
 - Updated `apps/dashboard/src/pages/Tickets.css` with dark-mode compatible styles for the new section.
+
+## Session: December 27, 2024 - Forge-Sentinel Data Flow Fix
+Status: ✅ COMPLETED
+
+Fixed 2 critical bugs:
+1. Engine now writes sentinel_feedback on verification failure (was writing to verification_evidence)
+2. Forge agent now handles multiple feedback data formats (feedback_for_agent, issues, feedback string, message)
+
+Files: engine.js, forge-agent-v4.js
+Services restarted: swarm-platform-dev, swarm-engine

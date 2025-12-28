@@ -422,7 +422,23 @@ export class SwarmEngine extends EventEmitter {
           } else {
             log('WARN', `Ticket ${ticketId} - Verification FAILED`);
             verificationFeedback = formatFeedbackForRetry(verificationResult.feedback_for_agent);
-            await this.pool.query(`UPDATE tickets SET rejection_count = rejection_count + 1, updated_at = NOW() WHERE id = $1`, [ticketId]);
+            
+            // FIXED: Write sentinel_feedback with correct structure for forge agent
+            const sentinelFeedbackPayload = {
+              feedback_for_agent: verificationResult.feedback_for_agent || [],
+              sentinel_decision: verificationResult.sentinel_decision || 'REJECT',
+              sentinel_score: verificationResult.sentinel_score || 0,
+              failed_phase: verificationResult.failed_phase,
+              errorClassification: { category: 'verification', subcategory: verificationResult.failed_phase }
+            };
+            
+            await this.pool.query(`
+              UPDATE tickets 
+              SET rejection_count = rejection_count + 1, 
+                  sentinel_feedback = $1,
+                  updated_at = NOW() 
+              WHERE id = $2
+            `, [JSON.stringify(sentinelFeedbackPayload), ticketId]);
             attemptNumber++;
 
             if (attemptNumber > MAX_ATTEMPTS) {

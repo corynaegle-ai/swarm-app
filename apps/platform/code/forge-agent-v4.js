@@ -214,6 +214,7 @@ function formatAcceptanceCriteria(criteria) {
 
 /**
  * Format sentinel feedback for injection into forge agent prompt
+ * FIXED: Handles multiple data shapes from different writers
  * @param {Object} ticket - Ticket object with sentinel_feedback and retry_count
  * @returns {string} Formatted feedback section or empty string
  */
@@ -224,8 +225,46 @@ function formatSentinelFeedback(ticket) {
     ? JSON.parse(ticket.sentinel_feedback)
     : ticket.sentinel_feedback;
 
-  const feedbackItems = feedback.feedback_for_agent || [];
-  if (feedbackItems.length === 0) return '';
+  // FIXED: Handle multiple data formats from different writers
+  let feedbackItems = [];
+
+  // Format 1: New format with feedback_for_agent array (from engine)
+  if (feedback.feedback_for_agent && Array.isArray(feedback.feedback_for_agent)) {
+    feedbackItems = feedback.feedback_for_agent;
+  }
+  
+  // Format 2: Legacy format with issues object (from sentinel verifier)
+  if (feedbackItems.length === 0 && feedback.issues) {
+    const critical = feedback.issues.critical || [];
+    const major = feedback.issues.major || [];
+    feedbackItems = [
+      ...critical.map(i => `CRITICAL [${i.file}:${i.line}]: ${i.issue}`),
+      ...major.map(i => `MAJOR [${i.file}:${i.line}]: ${i.issue}`)
+    ];
+  }
+  
+  // Format 3: Legacy format with feedback string (from sentinel verifier)
+  if (feedbackItems.length === 0 && feedback.feedback && typeof feedback.feedback === 'string') {
+    feedbackItems = feedback.feedback.split('\n').filter(line => line.trim());
+  }
+  
+  // Format 4: Simple message format (from tickets.js retry logic)
+  if (feedbackItems.length === 0 && feedback.message) {
+    feedbackItems = [feedback.message];
+  }
+  
+  // Format 5: Error string (fallback)
+  if (feedbackItems.length === 0 && feedback.error) {
+    feedbackItems = [`Error: ${feedback.error}`];
+  }
+
+  if (feedbackItems.length === 0) {
+    log.info('No feedback items found in sentinel_feedback', {
+      ticketId: ticket.id,
+      feedbackKeys: Object.keys(feedback)
+    });
+    return '';
+  }
 
   const attempt = (ticket.retry_count || 0) + 1;
   const maxAttempts = 3;
@@ -233,7 +272,8 @@ function formatSentinelFeedback(ticket) {
   log.info('Formatting sentinel feedback for prompt injection', {
     ticketId: ticket.id,
     attempt,
-    issueCount: feedbackItems.length
+    issueCount: feedbackItems.length,
+    feedbackFormat: feedback.feedback_for_agent ? 'new' : feedback.issues ? 'issues' : 'legacy'
   });
 
   /* DYNAMIC INSTRUCTION TUNING */

@@ -4,7 +4,7 @@ service:
   name: swarm-sentinel
   description: "Sentinel verification and code review service"
   pm2_name: swarm-sentinel
-  port: 8090
+  port: 3006
   
 repository:
   path: /opt/swarm-app/apps/agents/sentinel
@@ -31,7 +31,7 @@ deploy:
   timeout: 60
   
 health_check:
-  endpoint: http://localhost:8090/health
+  endpoint: http://localhost:3006/health
   method: GET
   expected_status: 200
   timeout: 30

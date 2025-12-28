@@ -257,7 +257,7 @@ User clicks "Start Build"
              │
              ▼
 ┌─────────────────────────────┐
-│  verify() → verifier-client │     Static + Automated + Sentinel
+│  verify() → sentinel-client │     Static + Automated + Sentinel
 └────────────┬────────────────┘
              │
      ┌───────┴───────┐

@@ -1,30 +1,27 @@
 const express = require('express');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const router = express.Router();
 
-// Mock user database - in production, this would be a real database
+// Mock user data - in production this would come from a database
 const users = [
   {
     id: 1,
-    email: 'user@example.com',
-    password: '$2b$10$rQj5QhvZ7qJZvZ8VqZqZ8O.ZqZ8VqZqZ8O.ZqZ8VqZqZ8O.ZqZ8VqZ', // 'password123'
-    role: 'user'
+    email: 'admin@example.com',
+    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
+    role: 'admin'
   },
   {
     id: 2,
-    email: 'admin@example.com',
-    password: '$2b$10$rQj5QhvZ7qJZvZ8VqZqZ8O.ZqZ8VqZqZ8O.ZqZ8VqZqZ8O.ZqZ8VqZ', // 'password123'
-    role: 'admin'
+    email: 'user@example.com',
+    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password
+    role: 'user'
   }
 ];
 
-// JWT Secret - in production, this should be in environment variables
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-
 /**
  * POST /api/auth/login
- * Authenticate user and return JWT token
+ * Authenticates user and returns JWT token
  */
 router.post('/login', async (req, res) => {
   try {
@@ -53,21 +50,21 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Generate JWT token with 24-hour expiration
+    // Generate JWT token with 24 hour expiration
     const token = jwt.sign(
       {
         userId: user.id,
         email: user.email,
         role: user.role
       },
-      JWT_SECRET,
+      process.env.JWT_SECRET || 'your-secret-key',
       {
         expiresIn: '24h'
       }
     );
 
     // Return success response with token
-    res.status(200).json({
+    res.json({
       success: true,
       token,
       user: {

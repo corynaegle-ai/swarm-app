@@ -1,35 +1,70 @@
 import { validateEmail } from '../emailValidator.js';
 
 describe('validateEmail', () => {
-  test('should return true for valid email addresses', () => {
-    expect(validateEmail('test@example.com')).toBe(true);
-    expect(validateEmail('user.name@domain.co.uk')).toBe(true);
-    expect(validateEmail('user+tag@example.org')).toBe(true);
-    expect(validateEmail('valid_email@sub.domain.com')).toBe(true);
+  describe('valid emails', () => {
+    test('should return true for valid email addresses', () => {
+      const validEmails = [
+        'test@example.com',
+        'user.name@domain.co.uk',
+        'user+tag@example.org',
+        'user_name@example-domain.com',
+        'test123@test123.com',
+        'a@b.co'
+      ];
+      
+      validEmails.forEach(email => {
+        expect(validateEmail(email)).toBe(true);
+      });
+    });
   });
-
-  test('should return false for invalid email addresses', () => {
-    expect(validateEmail('invalid-email')).toBe(false);
-    expect(validateEmail('@example.com')).toBe(false);
-    expect(validateEmail('user@')).toBe(false);
-    expect(validateEmail('user..name@example.com')).toBe(false);
-    expect(validateEmail('')).toBe(false);
+  
+  describe('invalid emails', () => {
+    test('should return false for invalid email addresses', () => {
+      const invalidEmails = [
+        'invalid-email',
+        '@example.com',
+        'test@',
+        'test..test@example.com',
+        'test@example.',
+        'test@.example.com',
+        'test @example.com',
+        'test@example .com'
+      ];
+      
+      invalidEmails.forEach(email => {
+        expect(validateEmail(email)).toBe(false);
+      });
+    });
   });
-
-  test('should handle null and undefined inputs gracefully', () => {
-    expect(validateEmail(null)).toBe(false);
-    expect(validateEmail(undefined)).toBe(false);
+  
+  describe('null and undefined handling', () => {
+    test('should return false for null input', () => {
+      expect(validateEmail(null)).toBe(false);
+    });
+    
+    test('should return false for undefined input', () => {
+      expect(validateEmail(undefined)).toBe(false);
+    });
   });
-
-  test('should handle non-string inputs gracefully', () => {
-    expect(validateEmail(123)).toBe(false);
-    expect(validateEmail({})).toBe(false);
-    expect(validateEmail([])).toBe(false);
-    expect(validateEmail(true)).toBe(false);
-  });
-
-  test('should trim whitespace and validate', () => {
-    expect(validateEmail('  test@example.com  ')).toBe(true);
-    expect(validateEmail(' invalid-email ')).toBe(false);
+  
+  describe('edge cases', () => {
+    test('should return false for empty string', () => {
+      expect(validateEmail('')).toBe(false);
+    });
+    
+    test('should return false for whitespace only', () => {
+      expect(validateEmail('   ')).toBe(false);
+    });
+    
+    test('should return false for non-string inputs', () => {
+      expect(validateEmail(123)).toBe(false);
+      expect(validateEmail({})).toBe(false);
+      expect(validateEmail([])).toBe(false);
+      expect(validateEmail(true)).toBe(false);
+    });
+    
+    test('should handle emails with whitespace padding', () => {
+      expect(validateEmail('  test@example.com  ')).toBe(true);
+    });
   });
 });

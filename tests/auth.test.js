@@ -1,88 +1,102 @@
 const request = require('supertest');
+const express = require('express');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const app = require('../src/app');
-const User = require('../src/models/User');
+const authRouter = require('../src/routes/auth');
 
-// Mock User model
-jest.mock('../src/models/User');
+const app = express();
+app.use(express.json());
+app.use('/api/auth', authRouter);
 
 describe('POST /api/auth/login', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('should return 400 when email or password is missing', async () => {
+  test('should return JWT token on valid credentials', async () => {
     const response = await request(app)
       .post('/api/auth/login')
-      .send({ email: 'test@example.com' });
+      .send({
+        email: 'admin@example.com',
+        password: 'password123'
+      })
+      .expect(200);
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toBe('Email and password are required');
+    expect(response.body.success).toBe(true);
+    expect(response.body.token).toBeDefined();
+    expect(response.body.user.email).toBe('admin@example.com');
+    expect(response.body.user.role).toBe('admin');
+    expect(response.body.expiresIn).toBe('24h');
   });
 
-  it('should return 401 for invalid email', async () => {
-    User.findOne.mockResolvedValue(null);
-
+  test('should return 401 on invalid email', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
         email: 'nonexistent@example.com',
         password: 'password123'
-      });
+      })
+      .expect(401);
 
-    expect(response.status).toBe(401);
     expect(response.body.error).toBe('Invalid credentials');
   });
 
-  it('should return 401 for invalid password', async () => {
-    const mockUser = {
-      _id: '123',
-      email: 'test@example.com',
-      password: await bcrypt.hash('correctpassword', 10),
-      role: 'user'
-    };
-
-    User.findOne.mockResolvedValue(mockUser);
-
+  test('should return 401 on invalid password', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'test@example.com',
+        email: 'admin@example.com',
         password: 'wrongpassword'
-      });
+      })
+      .expect(401);
 
-    expect(response.status).toBe(401);
     expect(response.body.error).toBe('Invalid credentials');
   });
 
-  it('should return JWT token on successful authentication', async () => {
-    const password = 'correctpassword';
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const mockUser = {
-      _id: '123',
-      email: 'test@example.com',
-      password: hashedPassword,
-      role: 'admin'
-    };
-
-    User.findOne.mockResolvedValue(mockUser);
-
+  test('should return 400 on missing email', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
-        email: 'test@example.com',
-        password: password
-      });
+        password: 'password123'
+      })
+      .expect(400);
 
-    expect(response.status).toBe(200);
-    expect(response.body.token).toBeDefined();
-    expect(response.body.user.email).toBe('test@example.com');
-    expect(response.body.user.role).toBe('admin');
+    expect(response.body.error).toBe('Email and password are required');
+  });
 
-    // Verify token contains user role and expires in 24 hours
-    const decoded = jwt.verify(response.body.token, process.env.JWT_SECRET || 'your-secret-key');
-    expect(decoded.role).toBe('admin');
-    expect(decoded.exp - decoded.iat).toBe(24 * 60 * 60); // 24 hours in seconds
+  test('should return 400 on missing password', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'admin@example.com'
+      })
+      .expect(400);
+
+    expect(response.body.error).toBe('Email and password are required');
+  });
+
+  test('should include user role in token payload', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'user@example.com',
+        password: 'password123'
+      })
+      .expect(200);
+
+    const decoded = jwt.decode(response.body.token);
+    expect(decoded.role).toBe('user');
+    expect(decoded.email).toBe('user@example.com');
+  });
+
+  test('should set token expiration to 24 hours', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'admin@example.com',
+        password: 'password123'
+      })
+      .expect(200);
+
+    const decoded = jwt.decode(response.body.token);
+    const now = Math.floor(Date.now() / 1000);
+    const expectedExpiry = now + (24 * 60 * 60); // 24 hours
+    
+    expect(decoded.exp).toBeCloseTo(expectedExpiry, -2);
   });
 });

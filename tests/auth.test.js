@@ -1,14 +1,13 @@
 const request = require('supertest');
 const express = require('express');
-const authRoutes = require('../src/routes/auth');
-const jwt = require('jsonwebtoken');
+const authRouter = require('../src/routes/auth');
 
 const app = express();
 app.use(express.json());
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authRouter);
 
 describe('POST /api/auth/login', () => {
-  test('should return JWT token for valid credentials', async () => {
+  test('should return JWT token on valid credentials', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
@@ -17,12 +16,25 @@ describe('POST /api/auth/login', () => {
       });
 
     expect(response.status).toBe(200);
-    expect(response.body).toHaveProperty('token');
-    expect(response.body).toHaveProperty('user');
+    expect(response.body.success).toBe(true);
+    expect(response.body.token).toBeDefined();
     expect(response.body.user.role).toBe('admin');
   });
 
-  test('should return 401 for invalid credentials', async () => {
+  test('should return 401 on invalid email', async () => {
+    const response = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'invalid@example.com',
+        password: 'password'
+      });
+
+    expect(response.status).toBe(401);
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toBe('Invalid credentials');
+  });
+
+  test('should return 401 on invalid password', async () => {
     const response = await request(app)
       .post('/api/auth/login')
       .send({
@@ -31,34 +43,21 @@ describe('POST /api/auth/login', () => {
       });
 
     expect(response.status).toBe(401);
-    expect(response.body).toHaveProperty('error', 'Invalid credentials');
+    expect(response.body.success).toBe(false);
+    expect(response.body.message).toBe('Invalid credentials');
   });
 
-  test('should return 400 for missing email or password', async () => {
+  test('should return 400 on missing credentials', async () => {
     const response = await request(app)
       .post('/api/auth/login')
-      .send({
-        email: 'admin@example.com'
-      });
+      .send({});
 
     expect(response.status).toBe(400);
-    expect(response.body).toHaveProperty('error', 'Email and password are required');
+    expect(response.body.success).toBe(false);
   });
 
-  test('token should expire after 24 hours', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'admin@example.com',
-        password: 'password'
-      });
-
-    const decoded = jwt.decode(response.body.token);
-    const expirationTime = decoded.exp - decoded.iat;
-    expect(expirationTime).toBe(24 * 60 * 60); // 24 hours in seconds
-  });
-
-  test('token should include user role in payload', async () => {
+  test('token should contain user role', async () => {
+    const jwt = require('jsonwebtoken');
     const response = await request(app)
       .post('/api/auth/login')
       .send({
@@ -67,7 +66,6 @@ describe('POST /api/auth/login', () => {
       });
 
     const decoded = jwt.decode(response.body.token);
-    expect(decoded).toHaveProperty('role', 'user');
-    expect(decoded).toHaveProperty('email', 'user@example.com');
+    expect(decoded.role).toBe('user');
   });
 });

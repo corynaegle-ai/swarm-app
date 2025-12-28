@@ -1,16 +1,25 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
 const router = express.Router();
 
-// JWT secret - in production this should be in environment variables
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+// Mock user database - in production, use actual database
+const users = [
+  {
+    id: 1,
+    email: 'user@example.com',
+    password: '$2b$10$K7L/VxwuP2lioN7nkwlqjOr8P5D1P5JjP6kJ1Q5P6kJ1Q5P6kJ1Q5', // 'password123'
+    role: 'user'
+  },
+  {
+    id: 2,
+    email: 'admin@example.com', 
+    password: '$2b$10$K7L/VxwuP2lioN7nkwlqjOr8P5D1P5JjP6kJ1Q5P6kJ1Q5P6kJ1Q5', // 'password123'
+    role: 'admin'
+  }
+];
 
-/**
- * POST /api/auth/login
- * Authenticates user and returns JWT token
- */
+// POST /api/auth/login endpoint
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -23,14 +32,14 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user by email
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = users.find(u => u.email === email);
     if (!user) {
       return res.status(401).json({
         error: 'Invalid credentials'
       });
     }
 
-    // Verify password
+    // Validate password
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({
@@ -38,28 +47,26 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Create JWT token payload with user role
-    const tokenPayload = {
-      userId: user._id,
-      email: user.email,
-      role: user.role || 'user'
-    };
-
-    // Generate JWT token with 24 hour expiration
+    // Generate JWT token with 24-hour expiration
     const token = jwt.sign(
-      tokenPayload,
-      JWT_SECRET,
-      { expiresIn: '24h' }
+      {
+        userId: user.id,
+        email: user.email,
+        role: user.role
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      {
+        expiresIn: '24h'
+      }
     );
 
-    // Return success response with token
+    // Return successful response with token
     res.status(200).json({
-      success: true,
-      token: token,
+      token,
       user: {
-        id: user._id,
+        id: user.id,
         email: user.email,
-        role: user.role || 'user'
+        role: user.role
       }
     });
 

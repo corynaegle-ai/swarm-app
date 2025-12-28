@@ -1,80 +1,77 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
+const { body, validationResult } = require('express-validator');
 const router = express.Router();
 
-// Mock user database - replace with actual database implementation
-const users = [
-  {
-    id: 1,
-    email: 'admin@example.com',
-    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password: password
-    role: 'admin'
-  },
-  {
-    id: 2,
-    email: 'user@example.com', 
-    password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // password: password
-    role: 'user'
-  }
+// Rate limiting for login endpoint
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 requests per windowMs
+  message: 'Too many login attempts, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Input validation middleware
+const loginValidation = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Valid email is required'),
+  body('password')
+    .isLength({ min: 1 })
+    .withMessage('Password is required')
 ];
 
-// JWT Secret - should be in environment variables in production
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
-const JWT_EXPIRES_IN = '24h';
-
-/**
- * POST /api/auth/login
- * Authenticate user and return JWT token
- */
-router.post('/login', async (req, res) => {
+// POST /api/auth/login
+router.post('/login', loginLimiter, loginValidation, async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    // Validate request body
-    if (!email || !password) {
+    // Validate input
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
       return res.status(400).json({
-        success: false,
-        message: 'Email and password are required'
+        error: 'Validation failed',
+        details: errors.array()
       });
     }
 
-    // Find user by email
-    const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const { email, password } = req.body;
+
+    // Ensure JWT_SECRET is set
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET environment variable is not set');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+
+    // In a real application, this would query a database
+    // For this implementation, we'll simulate database lookup
+    const user = await findUserByEmail(email);
     
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    
+    const isValidPassword = await bcrypt.compare(password, user.hashedPassword);
     if (!isValidPassword) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Generate JWT token with user role
+    // Generate JWT token with 24-hour expiration
     const tokenPayload = {
       userId: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
     };
 
-    const token = jwt.sign(tokenPayload, JWT_SECRET, {
-      expiresIn: JWT_EXPIRES_IN
-    });
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET);
 
-    // Return success response with token
-    res.status(200).json({
-      success: true,
-      message: 'Login successful',
-      token: token,
+    res.json({
+      token,
       user: {
         id: user.id,
         email: user.email,
@@ -83,12 +80,22 @@ router.post('/login', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
+    // Sanitize error logging - don't log sensitive data
+    console.error('Login error:', {
+      message: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString()
     });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Simulated database function - in production this would be replaced with actual DB queries
+async function findUserByEmail(email) {
+  // This is a placeholder for database integration
+  // In a real application, this would query your user database
+  // For testing purposes, return null to indicate no user found
+  return null;
+}
 
 module.exports = router;

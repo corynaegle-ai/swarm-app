@@ -1,29 +1,24 @@
 {
-  "name": "swarm",
+  "name": "swarm-app",
   "version": "1.0.0",
-  "private": true,
-  "description": "Swarm - Distributed AI Agent Orchestration Platform",
+  "description": "Swarm application with authentication",
+  "main": "src/app.js",
   "scripts": {
-    "dev:platform": "pnpm --filter @swarm/platform dev",
-    "dev:dashboard": "pnpm --filter @swarm/dashboard dev",
-    "build:platform": "pnpm --filter @swarm/platform build",
-    "build:dashboard": "pnpm --filter @swarm/dashboard build",
-    "lint": "pnpm -r lint",
-    "test": "pnpm -r test"
-  },
-  "keywords": [
-    "swarm",
-    "ai-agents",
-    "firecracker",
-    "microvm"
-  ],
-  "author": "Neural",
-  "license": "MIT",
-  "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
+    "start": "node src/app.js",
+    "test": "jest",
+    "dev": "nodemon src/app.js"
   },
   "dependencies": {
-    "pg": "^8.16.3"
-  }
+    "express": "^4.18.2",
+    "bcrypt": "^5.1.1",
+    "better-sqlite3": "^8.7.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }

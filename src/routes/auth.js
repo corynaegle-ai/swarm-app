@@ -1,16 +1,10 @@
 const express = require('express');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User'); // Assuming User model exists
+const User = require('../models/User');
 const router = express.Router();
 
-// JWT secret from environment variables
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
-
-/**
- * POST /api/auth/login
- * Authenticate user and return JWT token
- */
+// POST /api/auth/login
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -18,7 +12,8 @@ router.post('/login', async (req, res) => {
     // Validate input
     if (!email || !password) {
       return res.status(400).json({
-        error: 'Email and password are required'
+        success: false,
+        message: 'Email and password are required'
       });
     }
 
@@ -26,45 +21,49 @@ router.post('/login', async (req, res) => {
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
       return res.status(401).json({
-        error: 'Invalid credentials'
+        success: false,
+        message: 'Invalid credentials'
       });
     }
 
     // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
       return res.status(401).json({
-        error: 'Invalid credentials'
+        success: false,
+        message: 'Invalid credentials'
       });
     }
 
-    // Create JWT payload with user role
+    // Generate JWT token with 24 hour expiration
     const payload = {
       userId: user._id,
       email: user.email,
-      role: user.role || 'user'
+      role: user.role
     };
 
-    // Generate JWT token with 24 hour expiration
-    const token = jwt.sign(payload, JWT_SECRET, {
-      expiresIn: '24h'
-    });
+    const token = jwt.sign(
+      payload,
+      process.env.JWT_SECRET || 'fallback-secret-key',
+      { expiresIn: '24h' }
+    );
 
-    // Return success response with token
-    res.status(200).json({
+    res.json({
       success: true,
+      message: 'Login successful',
       token,
       user: {
         id: user._id,
         email: user.email,
-        role: user.role || 'user'
+        role: user.role
       }
     });
 
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({
-      error: 'Internal server error'
+      success: false,
+      message: 'Internal server error'
     });
   }
 });

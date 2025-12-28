@@ -1,79 +1,77 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User'); // Assuming User model exists
+const User = require('../models/User');
 
-// JWT secret from environment variables
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-key';
-
-/**
- * Middleware to verify JWT tokens
- */
+// JWT verification middleware
 const verifyToken = async (req, res, next) => {
   try {
-    // Get token from Authorization header
     const authHeader = req.headers.authorization;
+    
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({
-        error: 'Access token required'
+        success: false,
+        message: 'Access denied. No token provided.'
       });
     }
 
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-
-    // Verify token
-    const decoded = jwt.verify(token, JWT_SECRET);
     
-    // Optional: Fetch fresh user data
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret-key');
+    
+    // Optional: Verify user still exists
     const user = await User.findById(decoded.userId);
     if (!user) {
       return res.status(401).json({
-        error: 'Invalid token - user not found'
+        success: false,
+        message: 'Invalid token. User not found.'
       });
     }
 
-    // Add user info to request object
+    // Attach user info to request
     req.user = {
-      id: user._id,
-      email: user.email,
-      role: user.role || 'user'
+      id: decoded.userId,
+      email: decoded.email,
+      role: decoded.role
     };
-
+    
     next();
   } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({
-        error: 'Invalid token'
-      });
-    }
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
-        error: 'Token expired'
+        success: false,
+        message: 'Token expired'
       });
     }
     
-    console.error('JWT verification error:', error);
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token'
+      });
+    }
+    
+    console.error('JWT middleware error:', error);
     res.status(500).json({
-      error: 'Internal server error'
+      success: false,
+      message: 'Internal server error'
     });
   }
 };
 
-/**
- * Middleware to check user role
- */
-const requireRole = (roles) => {
+// Role-based authorization middleware
+const authorize = (roles = []) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
-        error: 'Authentication required'
+        success: false,
+        message: 'Access denied. Authentication required.'
       });
     }
 
-    const userRole = req.user.role;
-    const allowedRoles = Array.isArray(roles) ? roles : [roles];
-    
-    if (!allowedRoles.includes(userRole)) {
+    if (roles.length && !roles.includes(req.user.role)) {
       return res.status(403).json({
-        error: 'Insufficient permissions'
+        success: false,
+        message: 'Access denied. Insufficient permissions.'
       });
     }
 
@@ -83,5 +81,5 @@ const requireRole = (roles) => {
 
 module.exports = {
   verifyToken,
-  requireRole
+  authorize
 };

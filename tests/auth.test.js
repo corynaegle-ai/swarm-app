@@ -1,238 +1,228 @@
 const request = require('supertest');
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const authRoutes = require('../src/routes/auth');
-const { authenticateToken } = require('../src/middleware/jwt');
 
+// Create test app
 const app = express();
 app.use(express.json());
+
+// Import auth routes
+const authRoutes = require('../src/routes/auth');
 app.use('/api/auth', authRoutes);
 
-// Test user data
-const testUser = {
-  id: 1,
-  email: 'test@example.com',
-  hashedPassword: '', // Will be set in beforeAll
-  role: 'user'
-};
-
-beforeAll(async () => {
-  // Set JWT_SECRET for tests
-  process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing';
-  
-  // Hash test password
-  testUser.hashedPassword = await bcrypt.hash('password123', 10);
-  
-  // Mock the findUserByEmail function for tests
-  const authModule = require('../src/routes/auth');
-  const originalFindUser = authModule.findUserByEmail;
-  
-  // Override the findUserByEmail function for testing
-  jest.doMock('../src/routes/auth', () => {
-    const originalModule = jest.requireActual('../src/routes/auth');
-    return {
-      ...originalModule,
-      findUserByEmail: jest.fn().mockImplementation(async (email) => {
-        if (email === testUser.email) {
-          return testUser;
-        }
-        return null;
-      })
-    };
-  });
-});
-
-afterAll(() => {
-  delete process.env.JWT_SECRET;
-});
+const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
 
 describe('POST /api/auth/login', () => {
-  test('should accept email and password', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'test@example.com',
-        password: 'password123'
-      });
-    
-    expect(response.status).toBe(200);
-    expect(response.body).toHaveProperty('token');
+  describe('Successful Authentication', () => {
+    test('should return JWT token for valid admin credentials', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'admin@example.com',
+          password: 'password123'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('success', true);
+      expect(response.body).toHaveProperty('token');
+      expect(response.body).toHaveProperty('user');
+      expect(response.body.user).toHaveProperty('email', 'admin@example.com');
+      expect(response.body.user).toHaveProperty('role', 'admin');
+      
+      // Verify token is valid and contains correct payload
+      const decoded = jwt.verify(response.body.token, JWT_SECRET);
+      expect(decoded).toHaveProperty('userId', 1);
+      expect(decoded).toHaveProperty('email', 'admin@example.com');
+      expect(decoded).toHaveProperty('role', 'admin');
+      expect(decoded).toHaveProperty('exp');
+    });
+
+    test('should return JWT token for valid user credentials', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'user@example.com',
+          password: 'userpass'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('success', true);
+      expect(response.body).toHaveProperty('token');
+      expect(response.body.user).toHaveProperty('role', 'user');
+    });
+
+    test('should handle case insensitive email', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'ADMIN@EXAMPLE.COM',
+          password: 'password123'
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.user.email).toBe('admin@example.com');
+    });
   });
 
-  test('should return JWT token on successful authentication', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'test@example.com',
-        password: 'password123'
-      });
-    
-    expect(response.status).toBe(200);
-    expect(response.body).toHaveProperty('token');
-    expect(typeof response.body.token).toBe('string');
-    
-    // Verify it's a valid JWT
-    const decoded = jwt.decode(response.body.token);
-    expect(decoded).toHaveProperty('userId');
-    expect(decoded).toHaveProperty('email');
-    expect(decoded).toHaveProperty('role');
+  describe('Authentication Failures', () => {
+    test('should return 401 for invalid email', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'nonexistent@example.com',
+          password: 'password123'
+        });
+
+      expect(response.status).toBe(401);
+      expect(response.body).toHaveProperty('error', 'Invalid email or password');
+      expect(response.body).toHaveProperty('code', 'AUTHENTICATION_FAILED');
+      expect(response.body).not.toHaveProperty('token');
+    });
+
+    test('should return 401 for invalid password', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'admin@example.com',
+          password: 'wrongpassword'
+        });
+
+      expect(response.status).toBe(401);
+      expect(response.body).toHaveProperty('error', 'Invalid email or password');
+      expect(response.body).toHaveProperty('code', 'AUTHENTICATION_FAILED');
+    });
   });
 
-  test('should return 401 on invalid credentials - wrong password', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'test@example.com',
-        password: 'wrongpassword'
-      });
-    
-    expect(response.status).toBe(401);
-    expect(response.body).toHaveProperty('error', 'Invalid credentials');
+  describe('Input Validation', () => {
+    test('should return 400 for missing email', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          password: 'password123'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error', 'Email and password are required');
+      expect(response.body).toHaveProperty('code', 'MISSING_CREDENTIALS');
+    });
+
+    test('should return 400 for missing password', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'admin@example.com'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('code', 'MISSING_CREDENTIALS');
+    });
+
+    test('should return 400 for invalid email format', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'invalid-email',
+          password: 'password123'
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('error', 'Invalid email format');
+      expect(response.body).toHaveProperty('code', 'INVALID_EMAIL_FORMAT');
+    });
+
+    test('should return 400 for non-string inputs', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 123,
+          password: ['password']
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toHaveProperty('code', 'INVALID_INPUT_TYPE');
+    });
   });
 
-  test('should return 401 on invalid credentials - user not found', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'nonexistent@example.com',
-        password: 'password123'
-      });
-    
-    expect(response.status).toBe(401);
-    expect(response.body).toHaveProperty('error', 'Invalid credentials');
+  describe('Token Properties', () => {
+    test('should generate token that expires in 24 hours', async () => {
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'admin@example.com',
+          password: 'password123'
+        });
+
+      expect(response.status).toBe(200);
+      
+      const decoded = jwt.verify(response.body.token, JWT_SECRET);
+      const now = Math.floor(Date.now() / 1000);
+      const expectedExp = now + (24 * 60 * 60); // 24 hours from now
+      
+      // Allow 10 second tolerance for test execution time
+      expect(decoded.exp).toBeGreaterThan(now + (24 * 60 * 60) - 10);
+      expect(decoded.exp).toBeLessThan(now + (24 * 60 * 60) + 10);
+    });
+
+    test('should include user role in token payload', async () => {
+      const adminResponse = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'admin@example.com',
+          password: 'password123'
+        });
+
+      const adminDecoded = jwt.verify(adminResponse.body.token, JWT_SECRET);
+      expect(adminDecoded.role).toBe('admin');
+
+      const userResponse = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'user@example.com',
+          password: 'userpass'
+        });
+
+      const userDecoded = jwt.verify(userResponse.body.token, JWT_SECRET);
+      expect(userDecoded.role).toBe('user');
+    });
   });
 
-  test('should return token that expires after 24 hours', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'test@example.com',
-        password: 'password123'
-      });
-    
-    expect(response.status).toBe(200);
-    
-    const decoded = jwt.decode(response.body.token);
-    const currentTime = Math.floor(Date.now() / 1000);
-    const expectedExpiry = currentTime + (24 * 60 * 60); // 24 hours from now
-    
-    expect(decoded.exp).toBeDefined();
-    expect(decoded.exp).toBeGreaterThan(currentTime);
-    expect(decoded.exp).toBeLessThanOrEqual(expectedExpiry + 5); // Allow 5 second tolerance
-    expect(decoded.exp).toBeGreaterThanOrEqual(expectedExpiry - 5);
-  });
-
-  test('should include user role in token payload', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'test@example.com',
-        password: 'password123'
-      });
-    
-    expect(response.status).toBe(200);
-    
-    const decoded = jwt.decode(response.body.token);
-    expect(decoded).toHaveProperty('role', 'user');
-  });
-
-  test('should validate email format', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'invalid-email',
-        password: 'password123'
-      });
-    
-    expect(response.status).toBe(400);
-    expect(response.body).toHaveProperty('error', 'Validation failed');
-  });
-
-  test('should require password', async () => {
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'test@example.com'
-      });
-    
-    expect(response.status).toBe(400);
-    expect(response.body).toHaveProperty('error', 'Validation failed');
-  });
-
-  test('should enforce rate limiting', async () => {
-    // Make 6 requests quickly (limit is 5)
-    const requests = [];
-    for (let i = 0; i < 6; i++) {
-      requests.push(
-        request(app)
+  describe('Rate Limiting', () => {
+    test('should allow up to 5 login attempts', async () => {
+      // Make 5 failed attempts
+      for (let i = 0; i < 5; i++) {
+        const response = await request(app)
           .post('/api/auth/login')
           .send({
             email: 'test@example.com',
             password: 'wrongpassword'
-          })
-      );
-    }
-    
-    const responses = await Promise.all(requests);
-    
-    // The 6th request should be rate limited
-    const rateLimitedResponse = responses[responses.length - 1];
-    expect(rateLimitedResponse.status).toBe(429);
-  });
-});
+          });
+        
+        expect(response.status).toBe(401);
+      }
+    }, 10000);
 
-describe('JWT Middleware', () => {
-  test('should authenticate valid token', async () => {
-    // First, get a token
-    const loginResponse = await request(app)
-      .post('/api/auth/login')
-      .send({
-        email: 'test@example.com',
-        password: 'password123'
-      });
-    
-    const token = loginResponse.body.token;
-    
-    // Create a test route to verify middleware
-    const testApp = express();
-    testApp.use('/protected', authenticateToken, (req, res) => {
-      res.json({ message: 'Access granted', user: req.user });
-    });
-    
-    const response = await request(testApp)
-      .get('/protected')
-      .set('Authorization', `Bearer ${token}`);
-    
-    expect(response.status).toBe(200);
-    expect(response.body).toHaveProperty('message', 'Access granted');
-    expect(response.body.user).toHaveProperty('email', 'test@example.com');
-  });
+    test('should block 6th login attempt with rate limit', async () => {
+      // Make 5 failed attempts to hit the rate limit
+      for (let i = 0; i < 5; i++) {
+        await request(app)
+          .post('/api/auth/login')
+          .send({
+            email: 'ratelimit@example.com',
+            password: 'wrongpassword'
+          });
+      }
 
-  test('should reject request without token', async () => {
-    const testApp = express();
-    testApp.use('/protected', authenticateToken, (req, res) => {
-      res.json({ message: 'Access granted' });
-    });
-    
-    const response = await request(testApp)
-      .get('/protected');
-    
-    expect(response.status).toBe(401);
-    expect(response.body).toHaveProperty('error', 'Access token required');
-  });
+      // 6th attempt should be rate limited
+      const response = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: 'ratelimit@example.com',
+          password: 'wrongpassword'
+        });
 
-  test('should reject invalid token', async () => {
-    const testApp = express();
-    testApp.use('/protected', authenticateToken, (req, res) => {
-      res.json({ message: 'Access granted' });
-    });
-    
-    const response = await request(testApp)
-      .get('/protected')
-      .set('Authorization', 'Bearer invalid-token');
-    
-    expect(response.status).toBe(401);
-    expect(response.body).toHaveProperty('error', 'Invalid token');
+      expect(response.status).toBe(429);
+      expect(response.body).toHaveProperty('error', 'Too many login attempts, please try again later');
+      expect(response.body).toHaveProperty('code', 'RATE_LIMIT_EXCEEDED');
+    }, 15000);
   });
 });

@@ -49,7 +49,7 @@ function formatRelativeTime(dateString) {
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
-  
+
   if (diffMins < 1) return 'just now';
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
@@ -62,7 +62,7 @@ function formatRelativeTime(dateString) {
  */
 function formatEventDescription(event) {
   const actor = event.actor_id || 'System';
-  
+
   switch (event.event_type) {
     case 'state_changed':
       return `${actor} changed status: ${event.previous_value} → ${event.new_value}`;
@@ -91,7 +91,7 @@ export default function Tickets() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const { listTickets, getStats, getProjects, updateTicket, patchTicket, requeueTicket, createTicket, getTicketWithDetails, loading, error } = useTickets();
-  
+
   const [tickets, setTickets] = useState([]);
   const [stats, setStats] = useState({ total: 0, byState: {} });
   const [projects, setProjects] = useState([]);
@@ -272,9 +272,9 @@ export default function Tickets() {
 
   return (
     <div className="page-container">
-      
+
       <Sidebar />
-      
+
       <main className="page-main ">
         {/* Hero Stats Section */}
         <div className="tickets-hero">
@@ -330,8 +330,8 @@ export default function Tickets() {
         <div className="filters-toolbar">
           <div className="filter-group">
             <div className="filter-select-wrapper">
-              <select 
-                value={filterState} 
+              <select
+                value={filterState}
                 onChange={e => setFilterState(e.target.value)}
                 className="filter-select"
               >
@@ -343,8 +343,8 @@ export default function Tickets() {
               <span className="select-arrow">▾</span>
             </div>
             <div className="filter-select-wrapper">
-              <select 
-                value={filterProject} 
+              <select
+                value={filterProject}
                 onChange={e => setFilterProject(e.target.value)}
                 className="filter-select"
               >
@@ -356,7 +356,7 @@ export default function Tickets() {
               <span className="select-arrow">▾</span>
             </div>
             {activeFilters > 0 && (
-              <button 
+              <button
                 className="clear-filters"
                 onClick={() => { setFilterState(''); setFilterProject(''); }}
               >
@@ -364,7 +364,7 @@ export default function Tickets() {
               </button>
             )}
           </div>
-          <button 
+          <button
             className={`refresh-btn ${refreshing ? 'spinning' : ''}`}
             onClick={fetchData}
             disabled={loading || refreshing}
@@ -421,8 +421,8 @@ export default function Tickets() {
                   </td>
                 </tr>
               ) : tickets.map(ticket => (
-                <tr 
-                  key={ticket.id} 
+                <tr
+                  key={ticket.id}
                   className="ticket-row"
                   onClick={() => setSelectedTicket(ticket)}
                 >
@@ -431,8 +431,8 @@ export default function Tickets() {
                       <span className="ticket-id">#{ticket.id}</span>
                       <span className="ticket-title">{ticket.title}</span>
                       {ticket.vm_id && (
-                        <Link 
-                          to={`/vms?highlight=${ticket.vm_id}`} 
+                        <Link
+                          to={`/vms?highlight=${ticket.vm_id}`}
                           className="vm-badge"
                           onClick={e => e.stopPropagation()}
                         >
@@ -440,9 +440,9 @@ export default function Tickets() {
                         </Link>
                       )}
                       {ticket.pr_url && (
-                        <a 
-                          href={ticket.pr_url} 
-                          target="_blank" 
+                        <a
+                          href={ticket.pr_url}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="pr-badge"
                           onClick={e => e.stopPropagation()}
@@ -456,7 +456,7 @@ export default function Tickets() {
                     <span className="project-name">{getProjectName(ticket.project_id)}</span>
                   </td>
                   <td className="td-state">
-                    <span 
+                    <span
                       className="state-badge"
                       style={{
                         color: STATE_CONFIG[ticket.state]?.color,
@@ -469,7 +469,7 @@ export default function Tickets() {
                   </td>
                   <td className="td-scope">
                     {ticket.estimated_scope && (
-                      <span 
+                      <span
                         className="scope-badge"
                         style={{ color: SCOPE_CONFIG[ticket.estimated_scope]?.color }}
                         title={SCOPE_CONFIG[ticket.estimated_scope]?.hint}
@@ -479,7 +479,7 @@ export default function Tickets() {
                     )}
                   </td>
                   <td className="td-verify">
-                    <span 
+                    <span
                       className="verify-badge"
                       style={{
                         color: VERIFICATION_CONFIG[ticket.verification_status || 'unverified']?.color,
@@ -506,7 +506,7 @@ export default function Tickets() {
                     <span className="time-ago">{getRelativeTime(ticket.updated_at) || '—'}</span>
                   </td>
                   <td className="td-actions">
-                    <button 
+                    <button
                       className="view-btn"
                       onClick={e => { e.stopPropagation(); setSelectedTicket(ticket); }}
                     >
@@ -532,7 +532,7 @@ export default function Tickets() {
                       type="text"
                       className="edit-title-input"
                       value={editForm.title}
-                      onChange={e => setEditForm({...editForm, title: e.target.value})}
+                      onChange={e => setEditForm({ ...editForm, title: e.target.value })}
                     />
                   ) : (
                     <h2>{selectedTicket.title}</h2>
@@ -550,12 +550,12 @@ export default function Tickets() {
                   <button className="modal-close" onClick={() => { setSelectedTicket(null); setIsEditing(false); }}>×</button>
                 </div>
               </div>
-              
+
               <div className="modal-body">
                 <div className="detail-grid">
                   <div className="detail-item">
                     <label>State</label>
-                    <select 
+                    <select
                       value={selectedTicket.state}
                       onChange={e => handleStateChange(selectedTicket.id, e.target.value)}
                       className="state-select"
@@ -569,12 +569,12 @@ export default function Tickets() {
                       ))}
                     </select>
                   </div>
-                  
+
                   <div className="detail-item">
                     <label>Project</label>
                     <span className="detail-value">{getProjectName(selectedTicket.project_id)}</span>
                   </div>
-                  
+
                   <div className="detail-item">
                     <label>Scope</label>
                     <span className="detail-value">
@@ -585,7 +585,7 @@ export default function Tickets() {
                       ) : '—'}
                     </span>
                   </div>
-                  
+
                   <div className="detail-item">
                     <label>Assignee</label>
                     <span className="detail-value">
@@ -593,11 +593,11 @@ export default function Tickets() {
                       {selectedTicket.assignee_id ? `: ${selectedTicket.assignee_id}` : ' (Unassigned)'}
                     </span>
                   </div>
-                  
+
                   <div className="detail-item">
                     <label>Verification</label>
                     <span className="detail-value">
-                      <span 
+                      <span
                         className="verify-badge-modal"
                         style={{
                           color: VERIFICATION_CONFIG[selectedTicket.verification_status || 'unverified']?.color,
@@ -629,9 +629,9 @@ export default function Tickets() {
                     <label>🔗 Repository & Code</label>
                     <div className="repo-links">
                       {selectedTicket.repo_url && (
-                        <a 
-                          href={selectedTicket.repo_url} 
-                          target="_blank" 
+                        <a
+                          href={selectedTicket.repo_url}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="repo-link"
                         >
@@ -641,7 +641,7 @@ export default function Tickets() {
                         </a>
                       )}
                       {selectedTicket.branch_name && (
-                        <a 
+                        <a
                           href={selectedTicket.repo_url ? `${selectedTicket.repo_url}/tree/${selectedTicket.branch_name}` : '#'}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -653,7 +653,7 @@ export default function Tickets() {
                         </a>
                       )}
                       {selectedTicket.pr_url && (
-                        <a 
+                        <a
                           href={selectedTicket.pr_url}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -667,6 +667,67 @@ export default function Tickets() {
                     </div>
                   </div>
                 )}
+
+                {/* RAG Context Section */}
+                {selectedTicket.rag_context && (() => {
+                  let rag = null;
+                  try {
+                    rag = typeof selectedTicket.rag_context === 'string'
+                      ? JSON.parse(selectedTicket.rag_context)
+                      : selectedTicket.rag_context;
+                  } catch (e) {
+                    console.error('Failed to parse RAG context', e);
+                  }
+
+                  if (!rag) return null;
+
+                  return (
+                    <div className="detail-block rag-section">
+                      <label>🤖 RAG Context</label>
+                      <div className="rag-content">
+                        {rag.files_to_modify?.length > 0 && (
+                          <div className="rag-group">
+                            <span className="rag-label">Files to Modify:</span>
+                            <ul className="rag-file-list">
+                              {rag.files_to_modify.map((f, i) => (
+                                <li key={i}>{f}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {rag.files_to_create?.length > 0 && (
+                          <div className="rag-group">
+                            <span className="rag-label">Files to Create:</span>
+                            <ul className="rag-file-list">
+                              {rag.files_to_create.map((f, i) => (
+                                <li key={i}>{f}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {rag.snippets?.length > 0 && (
+                          <div className="rag-group">
+                            <span className="rag-label">Reference Snippets ({rag.snippets.length}):</span>
+                            <div className="rag-snippets">
+                              {rag.snippets.map((s, i) => (
+                                <details key={i} className="rag-snippet-detail">
+                                  <summary>{s.file}</summary>
+                                  <pre className="snippet-code">{s.content}</pre>
+                                </details>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {rag.implementation_notes && (
+                          <div className="rag-group">
+                            <span className="rag-label">Notes:</span>
+                            <p className="rag-notes">{rag.implementation_notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="detail-block">
                   <label>Description</label>
@@ -697,7 +758,7 @@ export default function Tickets() {
                   </div>
                 )}
 
-                
+
                 {/* Dependencies Section */}
                 {(selectedTicket.blocked_by?.length > 0 || selectedTicket.blocks?.length > 0) && (
                   <div className="detail-block dependencies-section">
@@ -779,25 +840,25 @@ export default function Tickets() {
                 {/* Action Buttons */}
                 <div className="ticket-actions">
                   {['in_progress', 'assigned', 'in_review', 'changes_requested', 'done'].includes(selectedTicket.state) && (
-                    <button 
+                    <button
                       className="action-btn requeue-btn"
                       onClick={() => handleRequeue(selectedTicket.id)}
                     >
                       🔄 Requeue
                     </button>
                   )}
-                  
+
                   {selectedTicket.state !== 'cancelled' && selectedTicket.state !== 'done' && (
-                    <button 
+                    <button
                       className="action-btn cancel-btn"
                       onClick={() => handleCancelTicket(selectedTicket.id)}
                     >
                       🗑️ Cancel
                     </button>
                   )}
-                  
+
                   {selectedTicket.state === 'in_review' && (
-                    <button 
+                    <button
                       className="action-btn complete-btn"
                       onClick={() => handleMarkComplete(selectedTicket.id)}
                     >
@@ -828,7 +889,7 @@ export default function Tickets() {
                   <input
                     type="text"
                     value={newTicket.title}
-                    onChange={e => setNewTicket({...newTicket, title: e.target.value})}
+                    onChange={e => setNewTicket({ ...newTicket, title: e.target.value })}
                     placeholder="Enter ticket title..."
                     className="form-input"
                   />
@@ -837,7 +898,7 @@ export default function Tickets() {
                   <label>Description</label>
                   <textarea
                     value={newTicket.description}
-                    onChange={e => setNewTicket({...newTicket, description: e.target.value})}
+                    onChange={e => setNewTicket({ ...newTicket, description: e.target.value })}
                     placeholder="Describe the work to be done..."
                     className="form-textarea"
                     rows={6}
@@ -848,7 +909,7 @@ export default function Tickets() {
                     <label>Project</label>
                     <select
                       value={newTicket.project_id}
-                      onChange={e => setNewTicket({...newTicket, project_id: e.target.value})}
+                      onChange={e => setNewTicket({ ...newTicket, project_id: e.target.value })}
                       className="form-select"
                     >
                       <option value="">No Project</option>
@@ -865,7 +926,7 @@ export default function Tickets() {
                           key={scope}
                           type="button"
                           className={`scope-btn ${newTicket.estimated_scope === scope ? 'active' : ''}`}
-                          onClick={() => setNewTicket({...newTicket, estimated_scope: scope})}
+                          onClick={() => setNewTicket({ ...newTicket, estimated_scope: scope })}
                         >
                           {scope}
                         </button>
@@ -875,8 +936,8 @@ export default function Tickets() {
                 </div>
                 <div className="form-actions">
                   <button className="cancel-btn" onClick={() => setShowNewTicket(false)}>Cancel</button>
-                  <button 
-                    className="create-btn" 
+                  <button
+                    className="create-btn"
                     onClick={handleCreateTicket}
                     disabled={!newTicket.title.trim()}
                   >
@@ -889,8 +950,8 @@ export default function Tickets() {
         )}
 
 
-      {/* Premium Dark Theme Styles */}
-      <style>{`
+        {/* Premium Dark Theme Styles */}
+        <style>{`
         .tickets-dashboard { min-height: 100vh; background: #0a0a0a; }
         . { padding: 0 2rem 2rem 2rem; }
         
@@ -1724,7 +1785,7 @@ export default function Tickets() {
         }
 
       `}</style>
-    </main>
+      </main>
     </div>
   );
 }

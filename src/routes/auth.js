@@ -1,8 +1,23 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User'); // Assuming User model exists
 const router = express.Router();
+
+// Mock user database - replace with actual database integration
+const users = [
+  {
+    id: 1,
+    email: 'user@example.com',
+    password: '$2b$10$K7L1OJ45/4Y2nIvL5lmdIuKj8OU5JO3YX8PwrQvL0ZBQP1JlPQ8Ge', // 'password123'
+    role: 'user'
+  },
+  {
+    id: 2,
+    email: 'admin@example.com',
+    password: '$2b$10$K7L1OJ45/4Y2nIvL5lmdIuKj8OU5JO3YX8PwrQvL0ZBQP1JlPQ8Ge', // 'password123'
+    role: 'admin'
+  }
+];
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
@@ -12,15 +27,17 @@ router.post('/login', async (req, res) => {
     // Validate input
     if (!email || !password) {
       return res.status(400).json({
-        error: 'Email and password are required'
+        success: false,
+        message: 'Email and password are required'
       });
     }
 
     // Find user by email
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = users.find(u => u.email === email);
     if (!user) {
       return res.status(401).json({
-        error: 'Invalid credentials'
+        success: false,
+        message: 'Invalid credentials'
       });
     }
 
@@ -28,18 +45,19 @@ router.post('/login', async (req, res) => {
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
       return res.status(401).json({
-        error: 'Invalid credentials'
+        success: false,
+        message: 'Invalid credentials'
       });
     }
 
-    // Generate JWT token with 24 hour expiration
+    // Generate JWT token with 24-hour expiration
     const token = jwt.sign(
       {
-        userId: user._id,
+        userId: user.id,
         email: user.email,
-        role: user.role || 'user'
+        role: user.role
       },
-      process.env.JWT_SECRET || 'default-secret-key',
+      process.env.JWT_SECRET || 'your-secret-key',
       {
         expiresIn: '24h'
       }
@@ -47,19 +65,21 @@ router.post('/login', async (req, res) => {
 
     // Return success response with token
     res.status(200).json({
+      success: true,
       message: 'Login successful',
-      token: token,
+      token,
       user: {
-        id: user._id,
+        id: user.id,
         email: user.email,
-        role: user.role || 'user'
+        role: user.role
       }
     });
 
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({
-      error: 'Internal server error'
+      success: false,
+      message: 'Internal server error'
     });
   }
 });

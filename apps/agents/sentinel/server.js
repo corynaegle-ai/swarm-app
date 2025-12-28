@@ -181,7 +181,16 @@ app.get('/metrics', async (req, res) => {
  */
 app.post('/verify', async (req, res) => {
   const startTime = Date.now();
-  const { ticket_id, branch_name, repo_url, phases, attempt, acceptance_criteria: reqCriteria } = req.body;
+  const {
+    ticket_id,
+    branch_name,
+    repo_url,
+    phases,
+    attempt,
+    acceptance_criteria: reqCriteria,
+    title,
+    description
+  } = req.body;
 
   // Validate required fields
   if (!ticket_id || !branch_name || !repo_url) {
@@ -225,19 +234,27 @@ app.post('/verify', async (req, res) => {
     result.commit_sha = commitSha;
 
 
-    // Fetch acceptance criteria from ticket API (or use provided criteria)
+    // Fetch acceptance criteria from ticket API (or use provided criteria/metadata)
     let acceptanceCriteria = reqCriteria || null;
-    let ticketData = null;
-    if (!acceptanceCriteria || phasesToRun.includes('sentinel')) {
+    let ticketData = {
+      id: ticket_id,
+      title: title,
+      description: description,
+      acceptance_criteria: reqCriteria
+    };
+
+    // If metadata is missing, try fetching from API (internal auth might still block this)
+    if (!acceptanceCriteria || !title || phasesToRun.includes('sentinel')) {
       try {
         const ticketRes = await fetch(`${config.TICKET_API_URL}/api/tickets/${ticket_id}`);
         if (ticketRes.ok) {
           const ticket = await ticketRes.json();
-          ticketData = ticket;
+          // Merge API data with request data, prioritizing API for canonical fields
+          ticketData = { ...ticketData, ...ticket };
           acceptanceCriteria = acceptanceCriteria || ticket.acceptance_criteria;
         }
       } catch (err) {
-        console.log(`[${ticket_id}] Could not fetch ticket: ${err.message}`);
+        console.log(`[${ticket_id}] Could not fetch ticket metadata: ${err.message}`);
       }
     }
 

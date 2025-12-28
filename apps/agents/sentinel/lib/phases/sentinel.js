@@ -49,6 +49,15 @@ async function run(repoPath, ticket, baseBranch, acceptanceCriteria) {
         }
 
         // 3. Build Prompt
+        let criteriaList = acceptanceCriteria;
+        if (typeof criteriaList === 'string') {
+            try {
+                criteriaList = JSON.parse(criteriaList);
+            } catch (e) {
+                criteriaList = [criteriaList];
+            }
+        }
+
         const systemPrompt = `You are Sentinel, a senior code reviewer and security auditor.
 Your job is to verify that the provided code changes:
 1. Satisfy the Acceptance Criteria completely.
@@ -78,10 +87,10 @@ CRITICAL: Fail (REQUEST_CHANGES) if:
 Review this implementation for Ticket ${ticketId}: "${ticket?.title || 'Untitled'}"
 
 ## Description
-${ticket?.description || ''}
+${ticket?.description || 'No description provided.'}
 
 ## Acceptance Criteria
-${JSON.stringify(acceptanceCriteria || [], null, 2)}
+${JSON.stringify(criteriaList || [], null, 2)}
 
 ## Reference Code (Patterns to follow)
 ${context ? context.substring(0, 5000) : 'No reference context provided.'}

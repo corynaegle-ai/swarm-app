@@ -307,16 +307,22 @@ router.post('/complete', async (req, res) => {
 
     // 2. Trigger Sentinel Verification
     if (pr_url && branch_name) {
-      console.log(`[Swarm Protocol] Triggering Sentinel Verification for ${ticket_id}`);
+      const sentinelUrl = 'http://localhost:3006/verify';
+      console.log(`[Swarm Protocol] Triggering Sentinel Verification for ${ticket_id} with metadata`);
 
-      // We use a non-await call here to not block the agent, but we log strictly.
-      fetch('http://localhost:3006/verify', {
+      // Fetch ticket metadata to push to Sentinel (bypass Sentinel's auth issues)
+      const ticketMetadata = await queryOne('SELECT title, description, acceptance_criteria FROM tickets WHERE id = $1', [ticket_id]);
+
+      fetch(sentinelUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ticket_id,
-          repo_url: repoUrl, // Use dynamic repo_url
           branch_name,
+          repo_url: repoUrl,
+          title: ticketMetadata?.title,
+          description: ticketMetadata?.description,
+          acceptance_criteria: ticketMetadata?.acceptance_criteria,
           phases: ['static', 'automated', 'sentinel']
         })
       })
@@ -387,6 +393,15 @@ router.post('/complete', async (req, res) => {
                   attemptsRemaining
                 });
 
+                // Prepare sentinel_feedback object for Forge Agent
+                const sentinelFeedback = {
+                  decision: data.sentinel_decision,
+                  status: data.status,
+                  feedback: feedback,
+                  issues: data.results?.sentinel?.issues || {},
+                  errorClassification: classification
+                };
+
                 await execute(`
                   UPDATE tickets
                   SET state = $1,
@@ -399,8 +414,9 @@ router.post('/complete', async (req, res) => {
                       hold_reason = $5,
                       error = $6,
                       progress_log = COALESCE(progress_log, '') || $7,
-                      verification_status = 'failed'
-                  WHERE id = $8
+                      verification_status = 'failed',
+                      sentinel_feedback = $8
+                  WHERE id = $9
                 `, [
                   newState,
                   newRejectionCount,
@@ -409,6 +425,7 @@ router.post('/complete', async (req, res) => {
                   holdReason,
                   errorMessage,
                   logEntry,
+                  JSON.stringify(sentinelFeedback),
                   ticket_id
                 ]);
 

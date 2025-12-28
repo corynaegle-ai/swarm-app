@@ -328,12 +328,15 @@ function formatSentinelFeedback(ticket) {
   let classification = null;
 
   try {
-    // Check if it's a JSON string with structured data
-    if (typeof feedback === 'string' && feedback.trim().startsWith('{')) {
-      const parsed = JSON.parse(feedback);
-      if (parsed.feedback) {
-        feedback = parsed.feedback;
-        classification = parsed.errorClassification;
+    // Handle both object (from PG) and string (legacy)
+    const data = (typeof feedback === 'string') ? JSON.parse(feedback) : feedback;
+
+    if (data && typeof data === 'object') {
+      if (data.feedback) {
+        feedback = data.feedback;
+      }
+      if (data.errorClassification) {
+        classification = data.errorClassification;
       }
     }
   } catch (e) {

@@ -1,72 +1,56 @@
 const jwt = require('jsonwebtoken');
 
 /**
- * JWT Authentication middleware
- * Validates JWT tokens and attaches user info to request
+ * JWT Authentication Middleware
+ * Verifies JWT token and adds user info to request object
  */
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
   if (!token) {
-    return res.status(401).json({ 
-      error: 'Access token required' 
+    return res.status(401).json({
+      error: 'Access token required'
     });
   }
 
-  try {
-    const decoded = jwt.verify(
-      token, 
-      process.env.JWT_SECRET || 'fallback-secret-key',
-      {
-        issuer: 'swarm-app',
-        audience: 'swarm-app-users'
+  jwt.verify(token, process.env.JWT_SECRET || 'default-secret-key', (err, user) => {
+    if (err) {
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          error: 'Token expired'
+        });
       }
-    );
+      if (err.name === 'JsonWebTokenError') {
+        return res.status(401).json({
+          error: 'Invalid token'
+        });
+      }
+      return res.status(403).json({
+        error: 'Token verification failed'
+      });
+    }
 
-    // Attach user info to request
-    req.user = {
-      userId: decoded.userId,
-      email: decoded.email,
-      role: decoded.role
-    };
-
+    req.user = user;
     next();
-  } catch (error) {
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
-        error: 'Token expired' 
-      });
-    }
-    
-    if (error.name === 'JsonWebTokenError') {
-      return res.status(401).json({ 
-        error: 'Invalid token' 
-      });
-    }
-
-    console.error('JWT verification error:', error);
-    return res.status(500).json({ 
-      error: 'Token verification failed' 
-    });
-  }
+  });
 };
 
 /**
  * Role-based authorization middleware
- * @param {string|string[]} allowedRoles - Roles that can access the route
+ * @param {string[]} roles - Array of allowed roles
  */
-const authorizeRoles = (...allowedRoles) => {
+const requireRole = (roles) => {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ 
-        error: 'Authentication required' 
+      return res.status(401).json({
+        error: 'Authentication required'
       });
     }
 
-    if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ 
-        error: 'Insufficient permissions' 
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        error: 'Insufficient permissions'
       });
     }
 
@@ -82,29 +66,18 @@ const authorizeRoles = (...allowedRoles) => {
 const generateToken = (payload, expiresIn = '24h') => {
   return jwt.sign(
     payload,
-    process.env.JWT_SECRET || 'fallback-secret-key',
-    {
-      expiresIn,
-      issuer: 'swarm-app',
-      audience: 'swarm-app-users'
-    }
+    process.env.JWT_SECRET || 'default-secret-key',
+    { expiresIn }
   );
 };
 
 /**
- * Verify token utility
+ * Verify JWT token utility
  * @param {string} token - JWT token to verify
  */
 const verifyToken = (token) => {
   try {
-    return jwt.verify(
-      token,
-      process.env.JWT_SECRET || 'fallback-secret-key',
-      {
-        issuer: 'swarm-app',
-        audience: 'swarm-app-users'
-      }
-    );
+    return jwt.verify(token, process.env.JWT_SECRET || 'default-secret-key');
   } catch (error) {
     throw error;
   }
@@ -112,7 +85,7 @@ const verifyToken = (token) => {
 
 module.exports = {
   authenticateToken,
-  authorizeRoles,
+  requireRole,
   generateToken,
   verifyToken
 };

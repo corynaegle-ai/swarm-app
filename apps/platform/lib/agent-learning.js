@@ -18,6 +18,14 @@ function generateExecutionId() {
  * Error Classification Patterns
  */
 const ERROR_PATTERNS = {
+  verification: [
+    /REQUEST_CHANGES/i, /Verification failed/i, /Sentinel check failed/i,
+    /Tests failed/i, /Linting failed/i
+  ],
+  security: [
+    /SECURITY VULNERABILITY/i, /Hardcoded/i, /exposed password/i,
+    /critical security risk/i, /security flaw/i
+  ],
   syntax: [
     /SyntaxError/i, /Unexpected token/i, /Invalid JSON/i,
     /Parsing error/i, /malformed/i, /invalid syntax/i
@@ -39,14 +47,6 @@ const ERROR_PATTERNS = {
   ],
   timeout: [
     /timeout/i, /timed out/i, /deadline exceeded/i
-  ],
-  security: [
-    /SECURITY VULNERABILITY/i, /Hardcoded/i, /exposed password/i,
-    /critical security risk/i, /security flaw/i
-  ],
-  verification: [
-    /REQUEST_CHANGES/i, /Verification failed/i, /Sentinel check failed/i,
-    /Tests failed/i, /Linting failed/i
   ]
 };
 

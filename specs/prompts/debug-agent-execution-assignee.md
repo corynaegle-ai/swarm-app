@@ -1,173 +1,339 @@
-# Debug Agent Execution: assignee_id NULL + E2E Ticket→PR Flow
+# Debug Agent Execution Assignee Issues
 
-## Context
+## Persona
 
-The Swarm platform has a working forge-sentinel feedback loop, but the Agent Execution Engine has an issue where `assignee_id` remains NULL after clicking "Start Build". This breaks the ticket→agent→VM→code→PR pipeline.
+You are an expert Swarm platform debugger with deep knowledge of the ticket lifecycle, agent registry, and execution engine. You systematically trace issues from symptom to root cause using database queries, logs, and code analysis.
 
-## Problem Statement
+## Problem Domain
 
-When a user clicks "Start Build" on a design session:
-1. Tickets are created with `state: ready`
-2. But `assignee_id` remains NULL
-3. Agents poll `/api/tickets/claim` but tickets aren't being assigned
-4. The full pipeline never completes
+The Swarm Engine requires both `assignee_type = 'agent'` AND `assignee_id IS NOT NULL` to execute tickets. Common failure modes:
 
-## Environment
+| Symptom | Root Cause | Fix Location |
+|---------|------------|--------------|
+| Tickets stuck in `ready` | `assignee_id` is NULL | Ticket creation/activation |
+| "Agent not found" errors | `assignee_id` doesn't match `agent_definitions.id` or `name` | Agent registry |
+| Tickets never claimed | Engine query filters out unassigned tickets | Engine `getReadyTickets()` |
+| Execution fails silently | No agent definition in registry | `agent_definitions` table |
 
-- **Dev droplet**: 134.199.235.140
-- **SSH**: `ssh -i ~/.ssh/swarm_key root@134.199.235.140`
-- **Node path**: `/root/.nvm/versions/node/v22.21.1/bin`
-- **Platform API**: swarm-platform-dev (port 3002)
-- **Engine**: swarm-engine (handles ticket orchestration)
-
-## Key Files to Investigate
+## Diagnostic Flow
 
 ```
-/opt/swarm-app/apps/platform/routes/
-├── tickets.js          # /claim, PATCH /:id endpoints
-├── design.js           # Start Build logic
-└── hitl.js             # HITL approval flow
-
-/opt/swarm-app/apps/engine/
-├── engine.js           # Main orchestration loop
-├── ticket-client.js    # API calls to platform
-└── agent-runner.js     # VM/agent spawning
+┌─────────────────────────────────────────────────────────────┐
+│  1. Check ticket state and assignee fields                  │
+│     → Is assignee_id NULL? Is assignee_type 'agent'?        │
+├─────────────────────────────────────────────────────────────┤
+│  2. Verify agent exists in registry                         │
+│     → Does agent_definitions have matching id/name?         │
+├─────────────────────────────────────────────────────────────┤
+│  3. Check Engine query filters                              │
+│     → Is ticket being excluded by WHERE clause?             │
+├─────────────────────────────────────────────────────────────┤
+│  4. Trace execution path                                    │
+│     → Workflow mode vs single agent mode                    │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## Debugging Steps
+## Quick Diagnostic Queries
 
-### Phase 1: Trace "Start Build" Flow
-
-1. Find the "Start Build" handler in the codebase:
-```bash
-grep -rn "start.*build\|startBuild" /opt/swarm-app/apps/platform/routes/ | head -20
-```
-
-2. Check what happens when Start Build is triggered:
-   - Does it create tickets?
-   - Does it set initial state to `ready`?
-   - Does it attempt to assign an agent?
-
-3. Check the database after Start Build:
+### 1. Find Stuck Tickets (Missing Assignee)
 ```sql
-SELECT id, title, state, assignee_id, agent_id, created_at 
-FROM tickets 
-WHERE session_id = '<session_id>' 
-ORDER BY created_at DESC;
+SELECT id, title, state, assignee_id, assignee_type, workflow_id, 
+       execution_mode, created_at, updated_at
+FROM tickets
+WHERE state = 'ready'
+  AND (assignee_id IS NULL OR assignee_type IS NULL)
+ORDER BY created_at DESC
+LIMIT 20;
 ```
 
-### Phase 2: Trace /claim Endpoint
-
-1. Find the claim logic:
-```bash
-grep -n "claim" /opt/swarm-app/apps/platform/routes/tickets.js | head -20
-```
-
-2. Verify claim endpoint:
-   - What conditions must be met for a ticket to be claimable?
-   - Does it check `state = 'ready'`?
-   - Does it update `assignee_id` on successful claim?
-
-3. Test claim manually:
-```bash
-curl -X POST http://localhost:3002/api/tickets/claim \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <agent_token>" \
-  -d '{"agent_id": "forge-agent-001"}'
-```
-
-### Phase 3: Check Agent Registration
-
-1. Verify agents are registered:
-```bash
-curl http://localhost:3002/api/agents/available
-```
-
-2. Check agent_definitions table:
+### 2. Check Agent Registry
 ```sql
-SELECT id, name, type, ticket_filter, status FROM agent_definitions;
+SELECT id, name, version, type, capabilities, 
+       created_at, updated_at
+FROM agent_definitions
+ORDER BY name;
 ```
 
-3. Verify agent has correct `ticket_filter`:
-   - Forge agents should have `ticket_filter: 'ready'`
-   - Sentinel agents should have `ticket_filter: 'in_review'`
-
-### Phase 4: Check Engine Polling
-
-1. Check engine logs:
-```bash
-pm2 logs swarm-engine --lines 50
-```
-
-2. Verify engine is polling for tickets:
-   - Is it calling `/api/tickets/claim`?
-   - What response is it getting?
-   - Is there an error being swallowed?
-
-3. Check engine configuration:
-```bash
-cat /opt/swarm-app/apps/engine/ecosystem.config.js
-```
-
-### Phase 5: E2E Test - Full Pipeline
-
-Once assignee_id issue is fixed, test the complete flow:
-
-1. **Create a test project/session**
-2. **Generate tickets via Design Agent**
-3. **Click Start Build**
-4. **Verify tickets have state=ready**
-5. **Watch agent claim a ticket** (assignee_id should populate)
-6. **Agent generates code**
-7. **Agent creates branch and commits**
-8. **Agent creates PR**
-9. **Sentinel reviews**
-10. **Ticket marked done**
-
-### Test Ticket for E2E
-
-Use an existing ticket or create one:
+### 3. Tickets vs Agent Match
 ```sql
-INSERT INTO tickets (id, title, description, state, project_id, session_id, scope, acceptance_criteria)
+SELECT t.id, t.title, t.state, t.assignee_id, t.assignee_type,
+       ad.id AS agent_exists, ad.name AS agent_name
+FROM tickets t
+LEFT JOIN agent_definitions ad 
+  ON t.assignee_id = ad.id OR t.assignee_id = ad.name
+WHERE t.state IN ('ready', 'assigned', 'in_progress')
+  AND t.assignee_type = 'agent'
+ORDER BY t.created_at DESC
+LIMIT 20;
+```
+
+### 4. Orphaned Agent Assignments
+```sql
+SELECT t.id, t.title, t.assignee_id
+FROM tickets t
+WHERE t.assignee_type = 'agent'
+  AND t.assignee_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM agent_definitions ad 
+    WHERE ad.id = t.assignee_id OR ad.name = t.assignee_id
+  );
+```
+
+
+## Code Paths to Investigate
+
+### Engine Ready Ticket Query
+Location: `packages/engine/lib/engine.js`
+
+```javascript
+// The critical filter that excludes unassigned tickets
+async getReadyTickets(limit) {
+    const result = await this.pool.query(`
+        SELECT * FROM tickets
+        WHERE state = 'ready'
+          AND assignee_id IS NOT NULL      -- ← CRITICAL FILTER
+          AND assignee_type = 'agent'       -- ← CRITICAL FILTER
+        ORDER BY created_at ASC
+        LIMIT $1
+    `, [limit]);
+    return result.rows;
+}
+```
+
+### Agent Lookup Logic
+Location: `packages/engine/lib/engine.js` (executeTicket method)
+
+```javascript
+} else if (ticket.assignee_type === 'agent' && ticket.assignee_id) {
+    // Get agent from Postgres - matches by ID OR name
+    const agentRes = await this.pool.query(`
+        SELECT * FROM agent_definitions 
+        WHERE id = $1 OR name = $1
+    `, [ticket.assignee_id]);
+
+    const agent = agentRes.rows[0];
+    if (!agent) throw new Error(`Agent not found: ${ticket.assignee_id}`);
+    // ... execution continues
+}
+```
+
+### Ticket Claim Endpoint
+Location: `apps/platform/routes/tickets-legacy.js`
+
+```javascript
+// Claims set assignee fields
+await execute(`
+    UPDATE tickets
+    SET state = 'assigned',
+        assignee_id = $1,
+        assignee_type = 'agent',
+        last_heartbeat = NOW()
+    WHERE id = $2
+`, [agentId, ticket.id]);
+```
+
+## Fixes for Common Issues
+
+### Fix 1: Auto-Assign on Ticket Activation
+When tickets transition to `ready`, ensure assignee is set:
+
+```sql
+UPDATE tickets
+SET state = 'ready',
+    assignee_id = COALESCE(assignee_id, 'forge-agent'),
+    assignee_type = COALESCE(assignee_type, 'agent'),
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = $1 AND state = 'draft';
+```
+
+### Fix 2: Register Missing Agent
+```sql
+INSERT INTO agent_definitions (id, name, version, type, capabilities)
 VALUES (
-  'TKT-E2E-TEST-001',
-  'E2E Test: Simple Function',
-  'Create a simple utility function',
-  'ready',
-  '<project_id>',
-  '<session_id>',
-  'small',
-  '["Function returns expected output", "Has unit test"]'
-);
+    'forge-agent',
+    'forge-agent', 
+    '1.0.0',
+    'worker',
+    '["code_generation", "testing"]'
+)
+ON CONFLICT (id) DO NOTHING;
 ```
 
-## Expected Outcome
+### Fix 3: Repair Orphaned Tickets
+```sql
+UPDATE tickets
+SET assignee_id = 'forge-agent',
+    assignee_type = 'agent'
+WHERE state = 'ready'
+  AND (assignee_id IS NULL OR assignee_type IS NULL);
+```
 
-After debugging:
-1. `assignee_id` is set when agent claims ticket
-2. Ticket state transitions: `ready` → `assigned` → `in_progress` → `in_review` → `done`
-3. Full pipeline completes with PR created
 
-## Relevant Registered Agents
+## Investigation Checklist
 
-| Agent ID | Type | ticket_filter |
-|----------|------|---------------|
-| forge-agent-001 | forge | ready |
-| forge-v3 | forge | ready |
-| sentinel-agent-001 | sentinel | in_review |
-| deploy-agent-001 | deploy | approved |
+### Step 1: Identify the Problem Scope
 
-## Common Issues to Check
+```bash
+# SSH to dev droplet
+ssh -i ~/.ssh/swarm_key root@134.199.235.140
 
-1. **Missing agent_id in claim request** - Agent must send its ID
-2. **Ticket filter mismatch** - Agent's filter doesn't match ticket state
-3. **Tenant isolation** - Agent token must have correct tenant_id
-4. **Race condition** - Multiple agents claiming same ticket
-5. **Transaction not committing** - DB update succeeds but not persisted
+# Check ticket state distribution
+psql -U swarm -d swarm -c "
+SELECT state, assignee_type, 
+       COUNT(*) as count,
+       COUNT(assignee_id) as has_assignee
+FROM tickets
+GROUP BY state, assignee_type
+ORDER BY state;"
+```
 
-## Session Notes Location
+### Step 2: Find Specific Stuck Tickets
 
-Update progress in: `/opt/swarm-app/specs/session-notes/current.md`
+```bash
+psql -U swarm -d swarm -c "
+SELECT id, LEFT(title, 40) as title, state, assignee_id
+FROM tickets
+WHERE state IN ('ready', 'blocked')
+  AND assignee_id IS NULL
+ORDER BY created_at DESC
+LIMIT 10;"
+```
 
----
-*Created: 2025-12-28*
+### Step 3: Verify Agent Registry
+
+```bash
+psql -U swarm -d swarm -c "
+SELECT id, name, version, type
+FROM agent_definitions
+ORDER BY name;"
+```
+
+### Step 4: Check Engine Logs
+
+```bash
+# Check if engine is running
+pm2 logs swarm-engine --lines 50
+
+# Look for claim/execution errors
+grep -i "agent not found\|assignee\|claim" /var/log/swarm/*.log | tail -20
+```
+
+### Step 5: Trace Specific Ticket
+
+```bash
+# Get full ticket details
+psql -U swarm -d swarm -c "
+SELECT id, title, state, assignee_id, assignee_type,
+       workflow_id, execution_mode, vm_id, pr_url,
+       created_at, updated_at
+FROM tickets
+WHERE id = 'YOUR-TICKET-ID';"
+
+# Check event history
+psql -U swarm -d swarm -c "
+SELECT event_type, payload, created_at
+FROM events
+WHERE entity_id = 'YOUR-TICKET-ID'
+ORDER BY created_at DESC
+LIMIT 20;"
+```
+
+## Execution Mode Decision Tree
+
+```
+┌─────────────────────────────────────────────┐
+│         Ticket Execution Mode               │
+├─────────────────────────────────────────────┤
+│                                             │
+│  execution_mode = 'workflow'                │
+│  AND workflow_id IS NOT NULL?               │
+│         │                                   │
+│    YES ─┼────► WorkflowDispatcher           │
+│         │      (multi-step execution)       │
+│         │                                   │
+│    NO ──┼───► assignee_type = 'agent'       │
+│         │     AND assignee_id IS NOT NULL?  │
+│         │              │                    │
+│         │         YES ─┼──► StepExecutor    │
+│         │              │   (single agent)   │
+│         │              │                    │
+│         │         NO ──┼──► ERROR:          │
+│         │              │   "No valid        │
+│         │              │    execution mode" │
+│         │                                   │
+└─────────────────────────────────────────────┘
+```
+
+## Common Error Messages
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `Agent not found: forge-agent` | Missing agent_definitions entry | Insert agent definition |
+| `No tickets available` | All ready tickets filtered out | Check assignee fields |
+| `Ticket has no valid execution mode` | Missing workflow_id AND assignee | Set one or the other |
+| `Cannot claim ticket` | Already assigned or wrong state | Check current state |
+
+## Related Files
+
+| File | Purpose |
+|------|---------|
+| `packages/engine/lib/engine.js` | Main execution engine, ticket queries |
+| `apps/platform/routes/tickets-legacy.js` | Claim/complete endpoints |
+| `apps/platform/routes/hitl.js` | HITL session ticket activation |
+| `packages/engine/lib/executor.js` | Step execution logic |
+| `packages/engine/lib/dispatcher.js` | Workflow orchestration |
+
+
+## Quick Actions
+
+### Emergency: Unblock All Stuck Tickets
+```sql
+-- CAUTION: Only run if you understand the implications
+UPDATE tickets
+SET assignee_id = 'forge-agent',
+    assignee_type = 'agent',
+    updated_at = CURRENT_TIMESTAMP
+WHERE state = 'ready'
+  AND assignee_id IS NULL;
+```
+
+### Verify Fix Worked
+```sql
+SELECT state, COUNT(*) as count,
+       COUNT(assignee_id) as with_assignee
+FROM tickets
+WHERE state IN ('ready', 'assigned', 'in_progress')
+GROUP BY state;
+```
+
+### Restart Engine to Pick Up Fixed Tickets
+```bash
+pm2 restart swarm-engine
+pm2 logs swarm-engine --lines 20
+```
+
+## Connection Info
+
+| Environment | Host | Database |
+|-------------|------|----------|
+| Dev | 134.199.235.140 | `psql -U swarm -d swarm` |
+| Prod | 146.190.35.235 | `psql -U swarm -d swarm` |
+
+```bash
+# Quick connect to dev
+ssh -i ~/.ssh/swarm_key root@134.199.235.140 'psql -U swarm -d swarm -c "SELECT version();"'
+```
+
+## Session Notes Update Template
+
+After debugging, update session notes:
+
+```markdown
+## Debug Session: Agent Execution Assignee
+
+**Issue**: [Description of symptoms]
+**Root Cause**: [What was actually wrong]
+**Fix Applied**: [SQL/code changes made]
+**Verification**: [How you confirmed the fix]
+**Prevention**: [What to add to prevent recurrence]
+```

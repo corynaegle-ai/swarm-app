@@ -1,68 +1,73 @@
 const jwt = require('jsonwebtoken');
 
+// JWT secret - should match the one in auth routes
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
 /**
  * JWT Authentication Middleware
- * Verifies JWT tokens and adds user info to request object
+ * Verifies JWT tokens and adds user info to request
  */
 const authenticateToken = (req, res, next) => {
   try {
+    // Get token from Authorization header
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
     if (!token) {
       return res.status(401).json({
-        success: false,
-        message: 'Access token required'
+        error: 'Access token required'
       });
     }
 
-    jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key', (err, user) => {
+    // Verify token
+    jwt.verify(token, JWT_SECRET, (err, decoded) => {
       if (err) {
         if (err.name === 'TokenExpiredError') {
           return res.status(401).json({
-            success: false,
-            message: 'Token expired'
+            error: 'Token expired'
           });
         }
         return res.status(403).json({
-          success: false,
-          message: 'Invalid token'
+          error: 'Invalid token'
         });
       }
 
       // Add user info to request object
-      req.user = user;
+      req.user = {
+        userId: decoded.userId,
+        email: decoded.email,
+        role: decoded.role
+      };
+
       next();
     });
+
   } catch (error) {
     console.error('JWT middleware error:', error);
     res.status(500).json({
-      success: false,
-      message: 'Internal server error'
+      error: 'Internal server error'
     });
   }
 };
 
 /**
- * Role Authorization Middleware
- * Checks if user has required role
+ * Role-based authorization middleware
+ * @param {string|string[]} allowedRoles - Role(s) allowed to access the route
  */
-const requireRole = (roles) => {
+const authorizeRole = (allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
+        error: 'Authentication required'
       });
     }
 
     const userRole = req.user.role;
-    const allowedRoles = Array.isArray(roles) ? roles : [roles];
+    const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
 
-    if (!allowedRoles.includes(userRole)) {
+    if (!roles.includes(userRole)) {
       return res.status(403).json({
-        success: false,
-        message: 'Insufficient permissions'
+        error: 'Insufficient permissions'
       });
     }
 
@@ -70,37 +75,7 @@ const requireRole = (roles) => {
   };
 };
 
-/**
- * Generate JWT Token
- * Helper function for token generation
- */
-const generateToken = (payload, options = {}) => {
-  const defaultOptions = {
-    expiresIn: '24h'
-  };
-  
-  return jwt.sign(
-    payload,
-    process.env.JWT_SECRET || 'your-secret-key',
-    { ...defaultOptions, ...options }
-  );
-};
-
-/**
- * Verify JWT Token
- * Helper function for token verification
- */
-const verifyToken = (token) => {
-  try {
-    return jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-  } catch (error) {
-    throw error;
-  }
-};
-
 module.exports = {
   authenticateToken,
-  requireRole,
-  generateToken,
-  verifyToken
+  authorizeRole
 };

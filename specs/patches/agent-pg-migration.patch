@@ -1,0 +1,37 @@
+--- /opt/swarm/engine/lib/engine.js	2024-12-20 12:00:00.000000000 +0000
++++ /opt/swarm/engine/lib/engine.js.new	2024-12-20 12:00:00.000000000 +0000
+@@ -130,6 +130,7 @@
+             getAgent: this.registryDb.prepare(`
+                 SELECT * FROM agents WHERE id = ? OR name = ?
+             `)
++            // DEPRECATED: getAgent moved to async PostgreSQL method getAgentDefinition()
+         };
+     }
+
+@@ -265,6 +266,27 @@
+         return result.rows.length > 0 ? result.rows[0] : null;
+     }
+
++    /**
++     * Get agent definition from PostgreSQL (replaces SQLite getAgent)
++     * @param {string} agentId - Agent ID or name to look up
++     * @returns {Promise<object|null>} Agent definition or null if not found
++     */
++    async getAgentDefinition(agentId) {
++        const result = await this.pgPool.query(`
++            SELECT * FROM agent_definitions 
++            WHERE id = $1 OR name = $1
++            ORDER BY created_at DESC
++            LIMIT 1
++        `, [agentId]);
++        
++        if (result.rows.length === 0) {
++            log('WARN', `Agent definition not found: ${agentId}`);
++            return null;
++        }
++        
++        return result.rows[0];
++    }
++
+     // ============ Ticket State Machine Methods ============
+

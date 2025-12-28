@@ -1,0 +1,706 @@
+/**
+ * Backlog API Routes
+ * 
+ * Lightweight idea staging area before HITL sessions.
+ * ZERO breaking changes to existing HITL workflow.
+ * 
+ * State Machine: draft → chatting → refined → promoted (or archived)
+ */
+
+const express = require('express');
+const router = express.Router();
+const { randomUUID: uuidv4 } = require('crypto');
+const { queryAll, queryOne, execute } = require('../db');
+const { requireAuth } = require('../middleware/auth');
+const { broadcast } = require('../websocket');
+const { chat } = require('../services/claude-client');
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const VALID_STATES = ['draft', 'chatting', 'refined', 'promoted', 'archived'];
+const VALID_PRIORITIES = [0, 1, 2]; // 0=low, 1=medium, 2=high
+const CHAT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Verify tenant access to backlog item
+ */
+async function getBacklogItem(id, tenantId) {
+  return queryOne(
+    'SELECT * FROM backlog_items WHERE id = $1 AND tenant_id = $2',
+    [id, tenantId]
+  );
+}
+
+/**
+ * Generate initial clarifying message based on backlog item
+ */
+function generateClarifyingPrompt(item) {
+  return `You are a technical product clarifier helping refine a project idea.
+
+The user has submitted this idea to their backlog:
+Title: ${item.title}
+Description: ${item.description || 'No description provided'}
+
+Your goal is to ask 2-3 focused clarifying questions to better understand:
+1. The core problem being solved
+2. Key technical requirements or constraints
+3. Success criteria
+
+Be conversational and helpful. Don't overwhelm with too many questions at once.`;
+}
+
+// ============================================================================
+// CRUD ENDPOINTS
+// ============================================================================
+
+/**
+ * POST /api/backlog - Create new backlog item
+ */
+router.post('/', requireAuth, async (req, res) => {
+  try {
+    const { title, description, labels, priority, project_id } = req.body;
+    const tenantId = req.user.tenant_id;
+    
+    if (!title || title.trim().length === 0) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+    
+    if (title.length > 255) {
+      return res.status(400).json({ error: 'Title must be 255 characters or less' });
+    }
+    
+    const itemPriority = VALID_PRIORITIES.includes(priority) ? priority : 0;
+    const itemLabels = Array.isArray(labels) ? labels : [];
+    
+    const id = uuidv4();
+    
+    // Get max rank for ordering
+    const maxRank = await queryOne(
+      'SELECT COALESCE(MAX(rank), 0) + 1 as next_rank FROM backlog_items WHERE tenant_id = $1',
+      [tenantId]
+    );
+    
+    await execute(`
+      INSERT INTO backlog_items (id, tenant_id, title, description, labels, priority, rank, project_id, created_by, state)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft')
+    `, [id, tenantId, title.trim(), description || null, JSON.stringify(itemLabels), itemPriority, maxRank.next_rank, project_id || null, req.user.id]);
+    
+    const item = await getBacklogItem(id, tenantId);
+    
+    // Broadcast to tenant's backlog room
+    broadcast.toRoom(`backlog:${tenantId}`, 'backlog:created', {
+      id: item.id,
+      title: item.title,
+      state: item.state,
+      priority: item.priority
+    });
+    
+    res.status(201).json(item);
+  } catch (err) {
+    console.error('POST /api/backlog error:', err);
+    res.status(500).json({ error: 'Failed to create backlog item' });
+  }
+});
+
+/**
+ * GET /api/backlog - List backlog items for tenant
+ */
+router.get('/', requireAuth, async (req, res) => {
+  try {
+    const tenantId = req.user.tenant_id;
+    const { state, priority, label, search, limit = 50, offset = 0 } = req.query;
+    
+    let sql = 'SELECT * FROM backlog_items WHERE tenant_id = $1';
+    const params = [tenantId];
+    let paramIndex = 2;
+    
+    // Filter by state
+    if (state && VALID_STATES.includes(state)) {
+      sql += ` AND state = $${paramIndex++}`;
+      params.push(state);
+    } else {
+      // Default: exclude archived and promoted
+      sql += ` AND state NOT IN ('archived', 'promoted')`;
+    }
+    
+    // Filter by priority
+    if (priority !== undefined && VALID_PRIORITIES.includes(parseInt(priority))) {
+      sql += ` AND priority = $${paramIndex++}`;
+      params.push(parseInt(priority));
+    }
+    
+    // Filter by label (JSONB containment)
+    if (label) {
+      sql += ` AND labels @> $${paramIndex++}::jsonb`;
+      params.push(JSON.stringify([label]));
+    }
+    
+    // Full-text search
+    if (search && search.trim().length > 0) {
+      sql += ` AND (title ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`;
+      params.push(`%${search.trim()}%`);
+      paramIndex++;
+    }
+    
+    // Order by priority (high first), then rank
+    sql += ' ORDER BY priority DESC, rank ASC';
+    
+    // Pagination
+    sql += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    params.push(parseInt(limit), parseInt(offset));
+    
+    const items = await queryAll(sql, params);
+    
+    // Get total count for pagination
+    let countSql = 'SELECT COUNT(*) as total FROM backlog_items WHERE tenant_id = $1';
+    const countParams = [tenantId];
+    if (state && VALID_STATES.includes(state)) {
+      countSql += ' AND state = $2';
+      countParams.push(state);
+    } else {
+      countSql += ` AND state NOT IN ('archived', 'promoted')`;
+    }
+    const countResult = await queryOne(countSql, countParams);
+    
+    res.json({
+      items,
+      total: parseInt(countResult.total),
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+  } catch (err) {
+    console.error('GET /api/backlog error:', err);
+    res.status(500).json({ error: 'Failed to list backlog items' });
+  }
+});
+
+/**
+ * GET /api/backlog/:id - Get single backlog item
+ */
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    res.json(item);
+  } catch (err) {
+    console.error('GET /api/backlog/:id error:', err);
+    res.status(500).json({ error: 'Failed to get backlog item' });
+  }
+});
+
+/**
+ * PATCH /api/backlog/:id - Update backlog item
+ */
+router.patch('/:id', requireAuth, async (req, res) => {
+  try {
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    
+    // Can't edit promoted items
+    if (item.state === 'promoted') {
+      return res.status(400).json({ error: 'Cannot edit promoted items' });
+    }
+    
+    const { title, description, labels, priority, rank, project_id } = req.body;
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+    
+    if (title !== undefined) {
+      if (title.trim().length === 0) {
+        return res.status(400).json({ error: 'Title cannot be empty' });
+      }
+      updates.push(`title = $${paramIndex++}`);
+      params.push(title.trim());
+    }
+    
+    if (description !== undefined) {
+      updates.push(`description = $${paramIndex++}`);
+      params.push(description);
+    }
+    
+    if (labels !== undefined && Array.isArray(labels)) {
+      updates.push(`labels = $${paramIndex++}`);
+      params.push(JSON.stringify(labels));
+    }
+    
+    if (priority !== undefined && VALID_PRIORITIES.includes(priority)) {
+      updates.push(`priority = $${paramIndex++}`);
+      params.push(priority);
+    }
+    
+    if (rank !== undefined) {
+      updates.push(`rank = $${paramIndex++}`);
+      params.push(rank);
+    }
+    
+    if (project_id !== undefined) {
+      updates.push(`project_id = $${paramIndex++}`);
+      params.push(project_id);
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No valid updates provided' });
+    }
+    
+    params.push(req.params.id, req.user.tenant_id);
+    await execute(
+      `UPDATE backlog_items SET ${updates.join(', ')} WHERE id = $${paramIndex++} AND tenant_id = $${paramIndex}`,
+      params
+    );
+    
+    const updated = await getBacklogItem(req.params.id, req.user.tenant_id);
+    
+    broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:updated', {
+      id: updated.id,
+      changes: req.body
+    });
+    
+    res.json(updated);
+  } catch (err) {
+    console.error('PATCH /api/backlog/:id error:', err);
+    res.status(500).json({ error: 'Failed to update backlog item' });
+  }
+});
+
+/**
+ * DELETE /api/backlog/:id - Archive backlog item (soft delete)
+ */
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    
+    if (item.state === 'promoted') {
+      return res.status(400).json({ error: 'Cannot delete promoted items' });
+    }
+    
+    await execute(
+      `UPDATE backlog_items SET state = 'archived' WHERE id = $1 AND tenant_id = $2`,
+      [req.params.id, req.user.tenant_id]
+    );
+    
+    broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:archived', {
+      id: req.params.id
+    });
+    
+    res.json({ success: true, message: 'Backlog item archived' });
+  } catch (err) {
+    console.error('DELETE /api/backlog/:id error:', err);
+    res.status(500).json({ error: 'Failed to archive backlog item' });
+  }
+});
+
+
+// ============================================================================
+// CHAT ENDPOINTS
+// ============================================================================
+
+/**
+ * POST /api/backlog/:id/start-chat - Begin clarifying chat session
+ */
+router.post('/:id/start-chat', requireAuth, async (req, res) => {
+  try {
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    
+    if (!['draft', 'refined'].includes(item.state)) {
+      return res.status(400).json({ 
+        error: `Cannot start chat from ${item.state} state`,
+        allowedStates: ['draft', 'refined']
+      });
+    }
+    
+    // Generate initial AI message
+    const systemPrompt = generateClarifyingPrompt(item);
+    const aiResponse = await chat([
+      { role: 'user', content: 'Please start the clarification conversation.' }
+    ], { system: systemPrompt });
+    
+    const initialMessage = {
+      role: 'assistant',
+      content: aiResponse,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Update item state and save first message
+    await execute(`
+      UPDATE backlog_items 
+      SET state = 'chatting', 
+          chat_transcript = $1,
+          chat_started_at = CURRENT_TIMESTAMP
+      WHERE id = $2 AND tenant_id = $3
+    `, [JSON.stringify([initialMessage]), req.params.id, req.user.tenant_id]);
+    
+    broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:updated', {
+      id: req.params.id,
+      changes: { state: 'chatting' }
+    });
+    
+    res.json({
+      success: true,
+      state: 'chatting',
+      initial_message: initialMessage
+    });
+  } catch (err) {
+    console.error('POST /api/backlog/:id/start-chat error:', err);
+    res.status(500).json({ error: 'Failed to start chat' });
+  }
+});
+
+/**
+ * POST /api/backlog/:id/chat - Send message in active chat
+ */
+router.post('/:id/chat', requireAuth, async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || message.trim().length === 0) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    
+    if (item.state !== 'chatting') {
+      return res.status(400).json({ 
+        error: `Cannot chat in ${item.state} state`,
+        hint: 'Call /start-chat first'
+      });
+    }
+    
+    // Parse existing transcript
+    const transcript = Array.isArray(item.chat_transcript) 
+      ? item.chat_transcript 
+      : JSON.parse(item.chat_transcript || '[]');
+    
+    // Add user message
+    const userMessage = {
+      role: 'user',
+      content: message.trim(),
+      timestamp: new Date().toISOString()
+    };
+    transcript.push(userMessage);
+    
+    // Build messages for Claude (convert to Claude format)
+    const claudeMessages = transcript.map(m => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.content
+    }));
+    
+    // Get AI response
+    const systemPrompt = generateClarifyingPrompt(item);
+    const aiContent = await chat(claudeMessages, { system: systemPrompt });
+    
+    const aiMessage = {
+      role: 'assistant',
+      content: aiContent,
+      timestamp: new Date().toISOString()
+    };
+    transcript.push(aiMessage);
+    
+    // Update transcript
+    await execute(`
+      UPDATE backlog_items SET chat_transcript = $1 WHERE id = $2 AND tenant_id = $3
+    `, [JSON.stringify(transcript), req.params.id, req.user.tenant_id]);
+    
+    // Broadcast new message
+    broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:chat_message', {
+      backlogId: req.params.id,
+      messages: [userMessage, aiMessage]
+    });
+    
+    res.json({
+      user_message: userMessage,
+      ai_response: aiMessage,
+      transcript_length: transcript.length
+    });
+  } catch (err) {
+    console.error('POST /api/backlog/:id/chat error:', err);
+    res.status(500).json({ error: 'Failed to process chat message' });
+  }
+});
+
+/**
+ * POST /api/backlog/:id/end-chat - End chat and generate summary
+ */
+router.post('/:id/end-chat', requireAuth, async (req, res) => {
+  try {
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    
+    if (item.state !== 'chatting') {
+      return res.status(400).json({ error: 'Not currently chatting' });
+    }
+    
+    const transcript = Array.isArray(item.chat_transcript) 
+      ? item.chat_transcript 
+      : JSON.parse(item.chat_transcript || '[]');
+    
+    // Generate summary if there's meaningful conversation
+    let summary = null;
+    let enrichedDescription = item.description;
+    
+    if (transcript.length >= 2) {
+      const summaryPrompt = `Based on this conversation about a project idea, provide:
+1. A brief summary (2-3 sentences) of key decisions made
+2. An enriched description incorporating the clarified requirements
+
+Original idea: ${item.title}
+Original description: ${item.description || 'None'}
+
+Conversation:
+${transcript.map(m => `${m.role}: ${m.content}`).join('\n\n')}
+
+Respond in JSON format:
+{
+  "summary": "...",
+  "enriched_description": "..."
+}`;
+
+      try {
+        const summaryResponse = await chat([
+          { role: 'user', content: summaryPrompt }
+        ], { system: 'You are a technical product analyst. Respond only with valid JSON.' });
+        
+        const parsed = JSON.parse(summaryResponse);
+        summary = parsed.summary;
+        enrichedDescription = parsed.enriched_description || item.description;
+      } catch (parseErr) {
+        console.warn('Failed to parse summary response, using fallback');
+        summary = 'Chat session completed.';
+      }
+    }
+    
+    // Update to refined state
+    await execute(`
+      UPDATE backlog_items 
+      SET state = 'refined',
+          chat_summary = $1,
+          enriched_description = $2
+      WHERE id = $3 AND tenant_id = $4
+    `, [summary, enrichedDescription, req.params.id, req.user.tenant_id]);
+    
+    broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:updated', {
+      id: req.params.id,
+      changes: { state: 'refined', chat_summary: summary }
+    });
+    
+    res.json({
+      success: true,
+      state: 'refined',
+      summary,
+      enriched_description: enrichedDescription
+    });
+  } catch (err) {
+    console.error('POST /api/backlog/:id/end-chat error:', err);
+    res.status(500).json({ error: 'Failed to end chat' });
+  }
+});
+
+// ============================================================================
+// PROMOTION ENDPOINT
+// ============================================================================
+
+/**
+ * POST /api/backlog/:id/promote - Convert backlog item to HITL session
+ * 
+ * This is the key integration point. It creates a new HITL session
+ * seeded with the backlog item's content, WITHOUT breaking the existing
+ * HITL workflow.
+ */
+router.post('/:id/promote', requireAuth, async (req, res) => {
+  try {
+    const { skip_clarification = false } = req.body;
+    
+    const item = await getBacklogItem(req.params.id, req.user.tenant_id);
+    if (!item) {
+      return res.status(404).json({ error: 'Backlog item not found' });
+    }
+    
+    if (!['draft', 'refined'].includes(item.state)) {
+      return res.status(400).json({ 
+        error: `Cannot promote from ${item.state} state`,
+        allowedStates: ['draft', 'refined']
+      });
+    }
+    
+    // Create HITL session with backlog context
+    const sessionId = uuidv4();
+    const initialState = skip_clarification ? 'ready_for_docs' : 'input';
+    
+    // Use enriched description if available, otherwise original
+    const description = item.enriched_description || item.description || '';
+    
+    // Build initial chat history from backlog transcript
+    let chatHistory = [];
+    if (item.chat_transcript && item.chat_transcript.length > 0) {
+      const transcript = Array.isArray(item.chat_transcript) 
+        ? item.chat_transcript 
+        : JSON.parse(item.chat_transcript);
+      chatHistory = transcript.map(m => ({
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp
+      }));
+    }
+    
+    // Create the HITL session
+    await execute(`
+      INSERT INTO hitl_sessions (
+        id, tenant_id, type, state, project_name, description, 
+        chat_history, source_type, backlog_item_id, created_at, updated_at
+      ) VALUES ($1, $2, 'design', $3, $4, $5, $6, 'backlog', $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [
+      sessionId,
+      req.user.tenant_id,
+      initialState,
+      item.title,
+      description,
+      JSON.stringify(chatHistory),
+      req.params.id
+    ]);
+    
+    // Update backlog item to promoted state
+    await execute(`
+      UPDATE backlog_items 
+      SET state = 'promoted',
+          hitl_session_id = $1,
+          promoted_at = CURRENT_TIMESTAMP
+      WHERE id = $2 AND tenant_id = $3
+    `, [sessionId, req.params.id, req.user.tenant_id]);
+    
+    // Broadcast events
+    broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:promoted', {
+      backlogId: req.params.id,
+      hitlSessionId: sessionId
+    });
+    
+    broadcast.toRoom(`tenant:${req.user.tenant_id}`, 'session:created', {
+      id: sessionId,
+      state: initialState,
+      source: 'backlog',
+      projectName: item.title
+    });
+    
+    res.json({
+      success: true,
+      backlog_state: 'promoted',
+      hitl_session: {
+        id: sessionId,
+        state: initialState,
+        source_type: 'backlog',
+        backlog_item_id: req.params.id,
+        project_name: item.title
+      }
+    });
+  } catch (err) {
+    console.error('POST /api/backlog/:id/promote error:', err);
+    res.status(500).json({ error: 'Failed to promote backlog item' });
+  }
+});
+
+// ============================================================================
+// BULK OPERATIONS
+// ============================================================================
+
+/**
+ * POST /api/backlog/reorder - Bulk update ranks for drag-drop reordering
+ */
+router.post('/reorder', requireAuth, async (req, res) => {
+  try {
+    const { items } = req.body; // Array of { id, rank, priority? }
+    
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Items array is required' });
+    }
+    
+    // Update each item's rank (and optionally priority)
+    for (const item of items) {
+      if (!item.id || typeof item.rank !== 'number') continue;
+      
+      let sql = 'UPDATE backlog_items SET rank = $1';
+      const params = [item.rank];
+      
+      if (item.priority !== undefined && VALID_PRIORITIES.includes(item.priority)) {
+        sql += ', priority = $2 WHERE id = $3 AND tenant_id = $4';
+        params.push(item.priority, item.id, req.user.tenant_id);
+      } else {
+        sql += ' WHERE id = $2 AND tenant_id = $3';
+        params.push(item.id, req.user.tenant_id);
+      }
+      
+      await execute(sql, params);
+    }
+    
+    broadcast.toRoom(`backlog:${req.user.tenant_id}`, 'backlog:reordered', {
+      count: items.length
+    });
+    
+    res.json({ success: true, updated: items.length });
+  } catch (err) {
+    console.error('POST /api/backlog/reorder error:', err);
+    res.status(500).json({ error: 'Failed to reorder items' });
+  }
+});
+
+/**
+ * POST /api/backlog/bulk-label - Add/remove labels from multiple items
+ */
+router.post('/bulk-label', requireAuth, async (req, res) => {
+  try {
+    const { item_ids, add_labels = [], remove_labels = [] } = req.body;
+    
+    if (!Array.isArray(item_ids) || item_ids.length === 0) {
+      return res.status(400).json({ error: 'item_ids array is required' });
+    }
+    
+    for (const itemId of item_ids) {
+      const item = await getBacklogItem(itemId, req.user.tenant_id);
+      if (!item) continue;
+      
+      let labels = Array.isArray(item.labels) 
+        ? item.labels 
+        : JSON.parse(item.labels || '[]');
+      
+      // Add new labels
+      for (const label of add_labels) {
+        if (!labels.includes(label)) {
+          labels.push(label);
+        }
+      }
+      
+      // Remove labels
+      labels = labels.filter(l => !remove_labels.includes(l));
+      
+      await execute(
+        'UPDATE backlog_items SET labels = $1 WHERE id = $2 AND tenant_id = $3',
+        [JSON.stringify(labels), itemId, req.user.tenant_id]
+      );
+    }
+    
+    res.json({ success: true, updated: item_ids.length });
+  } catch (err) {
+    console.error('POST /api/backlog/bulk-label error:', err);
+    res.status(500).json({ error: 'Failed to update labels' });
+  }
+});
+
+module.exports = router;

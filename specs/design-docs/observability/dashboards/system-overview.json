@@ -1,0 +1,109 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "id": null,
+  "title": "Swarm System Overview",
+  "uid": "swarm-system-overview",
+  "version": 1,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["swarm", "overview"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Active VMs",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum(swarm_vms_active)", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 80 }] },
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Tickets Completed/Hour",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "targets": [{ "expr": "sum(rate(swarm_tickets_total{status=\"completed\"}[1h])) * 3600", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } }
+    },
+    {
+      "id": 3,
+      "title": "API Error Rate %",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "targets": [{ "expr": "sum(rate(swarm_api_requests_total{status=~\"5..\"}[5m])) / sum(rate(swarm_api_requests_total[5m])) * 100", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0, "max": 100, "unit": "percent",
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "API Latency P95",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum(rate(swarm_api_request_duration_ms_bucket[5m])) by (le))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 500 }, { "color": "red", "value": 1000 }] } } }
+    },
+    {
+      "id": 5,
+      "title": "Pending Queue",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "targets": [{ "expr": "sum(swarm_queue_depth{status=\"pending\"})", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 100 }] } } }
+    },
+    {
+      "id": 6,
+      "title": "Claude API Cost (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "targets": [{ "expr": "sum(increase(swarm_claude_api_cost_usd[24h]))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 } }
+    },
+    {
+      "id": 7,
+      "title": "API Request Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [{ "expr": "sum(rate(swarm_api_requests_total[5m])) by (status)", "legendFormat": "{{status}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 8,
+      "title": "VM Boot Times (P50/P95/P99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(swarm_vm_boot_duration_ms_bucket[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(swarm_vm_boot_duration_ms_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(swarm_vm_boot_duration_ms_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 9,
+      "title": "Ticket Throughput by Status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [{ "expr": "sum(rate(swarm_tickets_total[5m])) by (status)", "legendFormat": "{{status}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 10,
+      "title": "Token Usage Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [{ "expr": "sum(rate(swarm_claude_api_tokens[5m])) by (direction)", "legendFormat": "{{direction}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    }
+  ]
+}

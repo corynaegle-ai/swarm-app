@@ -1,0 +1,28 @@
+{{/* Swarm Platform - Alertmanager Slack Templates */}}
+{{/* Location: /etc/alertmanager/templates/slack.tmpl */}}
+
+{{ define "slack.title" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+{{ end }}
+
+{{ define "slack.text" }}
+{{ range .Alerts }}
+*Alert:* {{ .Labels.alertname }} - {{ .Labels.severity | toUpper }}
+*Summary:* {{ .Annotations.summary }}
+*Description:* {{ .Annotations.description }}
+
+*Details:*
+{{ range .Labels.SortedPairs }}• *{{ .Name }}:* {{ .Value }}
+{{ end }}
+{{ if .Annotations.runbook }}📚 *Runbook:* {{ .Annotations.runbook }}{{ end }}
+{{ if .Annotations.dashboard }}📊 *Dashboard:* {{ .Annotations.dashboard }}{{ end }}
+{{ if .Annotations.action }}🔧 *Action:* {{ .Annotations.action }}{{ end }}
+---
+{{ end }}
+{{ end }}
+
+{{ define "slack.color" }}
+{{ if eq .Status "firing" }}
+  {{ if eq .CommonLabels.severity "critical" }}danger{{ else if eq .CommonLabels.severity "warning" }}warning{{ else }}#439FE0{{ end }}
+{{ else }}good{{ end }}
+{{ end }}

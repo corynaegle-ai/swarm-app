@@ -1,0 +1,58 @@
+# MCP Factory - Deployment Manifest
+
+service:
+  name: mcp-factory
+  description: "Generate MCP servers from natural language specifications"
+  pm2_name: mcp-factory
+  port: 3456
+  
+repository:
+  path: /opt/swarm-mcp-factory
+  github: corynaegle-ai/swarm-mcp-factory
+  branch: main
+  
+environment:
+  target: dev
+  droplet_ip: 134.199.235.140
+  
+build:
+  pre_checks:
+    - test -f package.json
+    - test -f src/index.js
+  commands:
+    - npm ci
+  timeout: 120
+  working_dir: /opt/swarm-mcp-factory
+  
+deploy:
+  strategy: replace
+  commands:
+    - pm2 restart mcp-factory --update-env
+  timeout: 60
+  
+health_check:
+  endpoint: http://localhost:3456/api/health
+  method: GET
+  expected_status: 200
+  timeout: 30
+  retries: 3
+  retry_delay: 5
+  
+rollback:
+  enabled: true
+  strategy: git_revert
+  commands:
+    - git stash
+    - git checkout HEAD^
+    - npm ci
+    - pm2 restart mcp-factory --update-env
+    
+dependencies:
+  services: []
+  env_vars:
+    - ANTHROPIC_API_KEY
+    
+notifications:
+  on_success: true
+  on_failure: true
+  create_ticket: true

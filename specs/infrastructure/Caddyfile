@@ -1,0 +1,98 @@
+# DEV API subdomain - Mixed routing to appropriate backends
+api.dev.swarmstack.net {
+	handle /api/auth/* {
+		reverse_proxy localhost:8080
+	}
+	handle /api/admin/* {
+		reverse_proxy localhost:8080
+	}
+	handle /api/secrets/* {
+		reverse_proxy localhost:8080
+	}
+	handle /api/swarm/* {
+		reverse_proxy localhost:8080
+	}
+	handle /api/rag/* {
+		reverse_proxy localhost:8082
+	}
+	reverse_proxy localhost:8080
+}
+
+# DEV Dashboard - SPA frontend + API proxying
+dashboard.dev.swarmstack.net {
+	# Grafana dashboard - metrics visualization
+	@grafana path /grafana /grafana/*
+	handle @grafana {
+		reverse_proxy localhost:3100
+	}
+	# WebSocket endpoint - must be first for proper upgrade handling
+	@websocket {
+		path /ws
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	handle @websocket {
+		reverse_proxy localhost:8080
+	}
+
+	@authapi path /api/auth/*
+	handle @authapi {
+		reverse_proxy localhost:8080
+	}
+
+	@adminapi path /api/admin/*
+	handle @adminapi {
+		reverse_proxy localhost:8080
+	}
+
+	@secretsapi path /api/secrets/*
+	handle @secretsapi {
+		reverse_proxy localhost:8080
+	}
+
+	@swarmapi path /api/swarm/*
+	handle @swarmapi {
+		reverse_proxy localhost:8080
+	}
+
+	@mcpfactory path /api/mcp-factory/*
+	handle @mcpfactory {
+		uri strip_prefix /api/mcp-factory
+		reverse_proxy localhost:3456
+	}
+
+	@otherapi path /api/*
+	handle @otherapi {
+		reverse_proxy localhost:8080
+	}
+
+	# Also handle /ws path without upgrade headers (for connection checks)
+	handle /ws {
+		reverse_proxy localhost:8080
+	}
+
+	handle {
+		reverse_proxy localhost:3000
+	}
+}
+
+# DEV Tickets Dashboard (legacy/direct access)
+tickets.dev.swarmstack.net {
+	reverse_proxy localhost:8080
+}
+
+# DEV Base domain - health check and redirect
+dev.swarmstack.net {
+	handle /health {
+		respond "OK" 200
+	}
+	handle {
+		redir https://dashboard.dev.swarmstack.net{uri} permanent
+	}
+}
+
+# DEV Deploy Agent - CI/CD orchestrator
+deploy.dev.swarmstack.net {
+	reverse_proxy localhost:3457
+}
+

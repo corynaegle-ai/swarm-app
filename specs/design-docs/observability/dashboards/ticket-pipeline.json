@@ -1,0 +1,120 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "id": null,
+  "title": "Swarm Ticket Pipeline",
+  "uid": "swarm-ticket-pipeline",
+  "version": 1,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["swarm", "tickets", "pipeline"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Pending",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum(swarm_queue_depth{status=\"pending\"})", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 20 }, { "color": "red", "value": 50 }] } } }
+    },
+    {
+      "id": 2,
+      "title": "In Progress",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "targets": [{ "expr": "sum(swarm_queue_depth{status=\"in_progress\"})", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "palette-classic" } } }
+    },
+    {
+      "id": 3,
+      "title": "Completed (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "targets": [{ "expr": "sum(increase(swarm_tickets_total{status=\"completed\"}[24h]))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "fixedColor": "green", "mode": "fixed" } } }
+    },
+    {
+      "id": 4,
+      "title": "Failed (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "targets": [{ "expr": "sum(increase(swarm_tickets_total{status=\"failed\"}[24h]))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "id": 5,
+      "title": "Throughput/Hour",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "targets": [{ "expr": "sum(rate(swarm_tickets_total{status=\"completed\"}[1h])) * 3600", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 1 } }
+    },
+    {
+      "id": 6,
+      "title": "Avg Duration",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "targets": [{ "expr": "avg(rate(swarm_ticket_duration_seconds_sum[5m]) / rate(swarm_ticket_duration_seconds_count[5m]))", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 7,
+      "title": "Queue Depth Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [{ "expr": "sum by (status) (swarm_queue_depth)", "legendFormat": "{{status}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "legend": { "calcs": ["last"], "displayMode": "table" } }
+    },
+    {
+      "id": 8,
+      "title": "Ticket Flow Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "sum(rate(swarm_tickets_total{status=\"pending\"}[5m]))", "legendFormat": "Created", "refId": "A" },
+        { "expr": "sum(rate(swarm_tickets_total{status=\"completed\"}[5m]))", "legendFormat": "Completed", "refId": "B" },
+        { "expr": "sum(rate(swarm_tickets_total{status=\"failed\"}[5m]))", "legendFormat": "Failed", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 9,
+      "title": "Duration Heatmap by Type",
+      "type": "heatmap",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [{ "expr": "sum(rate(swarm_ticket_duration_seconds_bucket[5m])) by (le, type)", "format": "heatmap", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "options": { "calculate": false, "cellGap": 1, "color": { "scheme": "Spectral" } }
+    },
+    {
+      "id": 10,
+      "title": "Tickets by Type",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 12 },
+      "targets": [{ "expr": "sum by (type) (increase(swarm_tickets_total[24h]))", "legendFormat": "{{type}}", "refId": "A" }],
+      "options": { "legend": { "displayMode": "table", "placement": "right" } }
+    },
+    {
+      "id": 11,
+      "title": "Tickets by Tenant",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 12 },
+      "targets": [{ "expr": "sum by (tenant_id) (increase(swarm_tickets_total[24h]))", "legendFormat": "{{tenant_id}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "id": 12,
+      "title": "Backlog Trend (Pending Over Time)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "sum(swarm_queue_depth{status=\"pending\"})", "legendFormat": "Backlog", "refId": "A" },
+        { "expr": "avg_over_time(sum(swarm_queue_depth{status=\"pending\"})[1h])", "legendFormat": "1h Avg", "refId": "B" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table" } }
+    }
+  ]
+}

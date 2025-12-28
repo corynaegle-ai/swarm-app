@@ -1,0 +1,70 @@
+# Engine VM ID Tracking Fix
+# Problem: Engine uses placeholder vmId=0, but executor acquires real VM IDs (1,2,3...)
+# The real vmId never gets tracked, causing cleanup to fail on VM 0
+
+## Fix Overview:
+# 1. Modify executor.runAgentInVm to return { output, vmId }
+# 2. Modify engine to track the actual vmId returned from executor
+# 3. Update cleanup to use actual vmId
+
+## executor.js changes (around line 227):
+
+### Before:
+```javascript
+async runAgentInVm(agent, inputs, step) {
+    // ... 
+    return output;
+```
+
+### After:
+```javascript
+async runAgentInVm(agent, inputs, step) {
+    // ...
+    return { output, vmId };  // Return vmId for tracking
+```
+
+## engine.js changes (around line 465):
+
+### Before:
+```javascript
+// NOTE: VM acquisition handled by executor.runAgentInVm()
+// Using placeholder vmId=0 for tracking
+const vmId = 0;
+```
+
+### After:
+```javascript
+// VM ID will be populated after execution
+let vmId = null;  // Will be set during execution
+```
+
+## engine.js changes in _executeAsync (around line 527):
+
+### Before:
+```javascript
+} else if (ticket.assignee_type === 'agent' && ticket.assignee_id) {
+    // Direct agent execution
+    const agent = this.registryStmts.getAgent.get(ticket.assignee_id, ticket.assignee_id);
+    if (!agent) {
+        throw new Error(`Agent not found: ${ticket.assignee_id}`);
+    }
+    result = await executor.runAgentInVm(agent, inputs, { id: ticketId, agent: agent.name });
+```
+
+### After:  
+```javascript
+} else if (ticket.assignee_type === 'agent' && ticket.assignee_id) {
+    // Direct agent execution
+    const agent = this.registryStmts.getAgent.get(ticket.assignee_id, ticket.assignee_id);
+    if (!agent) {
+        throw new Error(`Agent not found: ${ticket.assignee_id}`);
+    }
+    const execResult = await executor.runAgentInVm(agent, inputs, { id: ticketId, agent: agent.name });
+    result = execResult.output;
+    
+    // Update tracked vmId with actual value
+    const exec = this.activeExecutions.get(ticketId);
+    if (exec && execResult.vmId) {
+        exec.vmId = execResult.vmId;
+    }
+```

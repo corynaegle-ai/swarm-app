@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -16,11 +17,14 @@ import {
   Lightbulb,
   BarChart3,
   ExternalLink,
+  Settings,
 } from 'lucide-react';
+import { SettingsModal } from './Settings';
 
 export default function Sidebar() {
   const { user, logout } = useAuth();
   const location = useLocation();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const navItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -45,19 +49,16 @@ export default function Sidebar() {
   ];
 
   const isActive = (path) => {
-    // Exact match for specific routes
     if (path === '/tickets' && location.pathname === '/tickets') return true;
     if (path === '/tickets/kanban' && location.pathname === '/tickets/kanban') return true;
     if (path === '/agents' && location.pathname === '/agents') return true;
     if (path === '/agents/catalog') return location.pathname.startsWith('/agents/catalog');
     
-    // For other routes, use startsWith but exclude handled paths
     if (path !== '/tickets' && path !== '/tickets/kanban' && path !== '/agents' && path !== '/agents/catalog') {
       return location.pathname.startsWith(path);
     }
     return false;
   };
-
 
   return (
     <aside className="sidebar">
@@ -122,10 +123,22 @@ export default function Sidebar() {
             <span className="user-role">{user?.role}</span>
           </div>
         </div>
+        <button 
+          onClick={() => setSettingsOpen(true)} 
+          className="settings-btn" 
+          title="Settings"
+        >
+          <Settings size={18} />
+        </button>
         <button onClick={logout} className="logout-btn" title="Sign out">
           <LogOut size={18} />
         </button>
       </div>
+
+      <SettingsModal 
+        isOpen={settingsOpen} 
+        onClose={() => setSettingsOpen(false)} 
+      />
     </aside>
   );
 }

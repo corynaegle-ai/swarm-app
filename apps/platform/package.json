@@ -24,6 +24,7 @@
     "jsonwebtoken": "^9.0.3",
     "mammoth": "^1.11.0",
     "multer": "^2.0.2",
+    "openai": "^6.15.0",
     "pdf-parse": "^2.4.5",
     "pg": "^8.16.3",
     "prom-client": "^15.1.3",

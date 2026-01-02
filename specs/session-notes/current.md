@@ -1,115 +1,146 @@
-# Session Notes - 2026-01-02 (Bundle Pipeline)
+# Session Notes - 2026-01-02 (Bundle Pipeline Complete)
 
-## Summary: Bundle API Implementation
+## Summary: Tasks 4-5 Implementation
 
 ### Completed This Session
 
 | Task | Status | Details |
 |------|--------|---------|
-| Bundle Service | ✅ | `/apps/platform/services/bundle-service.js` created |
-| Bundle Routes | ✅ | `/apps/platform/routes/bundles.js` created |
-| Routes Mounted | ✅ | server.js updated with bundle routes |
-| MinIO Dependency | ✅ | `pnpm add minio` installed |
-| Platform Restart | ✅ | PM2 restart successful |
+| Task 1: MinIO | ✅ DONE | Previous session |
+| Task 2: PostgreSQL | ✅ DONE | Previous session |
+| Task 3: Bundle API | ✅ DONE | Previous session |
+| Task 4: Boot Script | ✅ DONE | bundle-fetch.sh created |
+| Task 5: Orchestrator | ✅ DONE | spawn service + routes created |
 
-### Files Created
+### Files Created/Modified
 
-**bundle-service.js** (150 lines):
-- `uploadBundle()` - Upload to MinIO + register in PostgreSQL
-- `activateVersion()` - Set active workflow version
-- `getActiveVersion()` - Get spawn config (for orchestrator)
-- `getBundleByHash()` - Lookup by SHA256
-- `listTenantWorkflows()` - List workflows for tenant
-- `listWorkflowVersions()` - List versions for workflow
-- `createWorkflow()` - Create new workflow
-- `getPresignedUrl()` - Generate download URL for VMs
+**bundle-fetch.sh** (scripts/bundle-fetch.sh):
+- Shell script to run inside VMs
+- Fetches bundle from MinIO URL
+- Verifies SHA256 hash
+- Caches bundles in /var/cache/swarm/bundles/
+- Unpacks to /opt/workflow
+- Runs entrypoint with specified runtime
 
-**bundles.js** (175 lines):
-- `POST /api/bundles` - Upload bundle (multipart)
-- `GET /api/bundles/:hash` - Get bundle by hash
-- `GET /api/bundles/:hash/presigned` - Get presigned URL
-- `GET /api/bundles/workflows` - List tenant workflows
-- `POST /api/bundles/workflows` - Create workflow
-- `GET /api/bundles/workflows/:id/versions` - List versions
-- `GET /api/bundles/workflows/:id/active` - Get active version
-- `POST /api/bundles/workflows/:id/versions/:vid/activate` - Activate
-- `GET /api/internal/spawn/:workflowId` - Internal spawn config
+**spawn-service.js** (services/spawn-service.js):
+- `getSpawnConfig(workflowId)` - Calls internal spawn API
+- `execOnVM(vmId, command)` - SSH into VM with namespace
+- `spawnWithBundle(vmId, workflowId)` - Full spawn flow
+- `releaseVM(vmId)` - Cleanup VM after workflow
 
-### server.js Changes
+**spawn.js** (routes/spawn.js):
+- `POST /api/spawn` - Spawn VM with workflow bundle
+- `GET /api/spawn` - List active spawns
+- `GET /api/spawn/:vmId/status` - Check spawn status
+- `DELETE /api/spawn/:vmId` - Release VM
 
-```javascript
-// Line 84: Import added
-const { router: bundleRoutes, internalRouter: bundleInternalRoutes } = require('./routes/bundles');
+**server.js** (updated):
+- Added spawn routes import (line 85)
+- Mounted /api/spawn (line 116)
 
-// Line 113: Public routes mounted
-app.use('/api/bundles', apiLimiter, bundleRoutes);
+---
 
-// Line 126: Internal routes mounted
-app.use("/api/internal", bundleInternalRoutes);
+## Verified Working
+
+```bash
+# List active spawns
+curl -s http://localhost:3002/api/spawn -H "Authorization: Bearer $TOKEN"
+# Returns: {"spawns": []}
+
+# Get spawn config for workflow
+curl -s http://localhost:3002/api/internal/spawn/c2dea386-b80b-4791-a105-ab4ec8374aed
+# Returns: {bundle_url, bundle_hash, runtime, entrypoint, etc.}
 ```
 
 ---
 
-## Next Steps
+## Next Steps (Prod Testing)
 
-### Step 2: Test Bundle Upload (NOT DONE)
-1. Create test tarball locally
-2. Upload via API: `curl -X POST -F "bundle=@test.tar.gz" -F "workflow_id=..." -F "version=1.0.0" http://localhost:3002/api/bundles`
-3. Verify in MinIO: `mc ls swarm/swarm-bundles/`
-4. Verify in PostgreSQL
+The API layer is complete on dev. End-to-end testing requires prod droplet (146.190.35.235) with Firecracker:
 
-### Step 3: Boot Script Modifications (NOT DONE)
-1. Check `/opt/swarm-engine/` for spawn logic
-2. Create bundle fetch script for VM
-3. Test VM boot with bundle fetch
+### Step 1: Deploy to Prod
+```bash
+# Copy files to prod
+rsync -avz -e "ssh -i ~/.ssh/swarm_key" \
+  /opt/swarm-app/apps/platform/services/spawn-service.js \
+  /opt/swarm-app/apps/platform/routes/spawn.js \
+  /opt/swarm-app/apps/platform/scripts/bundle-fetch.sh \
+  root@146.190.35.235:/opt/swarm-app/apps/platform/
 
-### Step 4: Orchestrator Integration (NOT DONE)
-1. Modify spawn to call `/api/internal/spawn/:workflowId`
-2. Pass bundle_url and bundle_hash to VM
-3. End-to-end test
+# Install bundle-fetch.sh into VM rootfs snapshot
+# ... (requires updating snapshots)
+```
+
+### Step 2: Test End-to-End on Prod
+```bash
+# Spawn VM with bundle
+curl -X POST http://localhost:3002/api/spawn \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"workflow_id": "c2dea386-b80b-4791-a105-ab4ec8374aed"}'
+```
+
+### Step 3: VM Rootfs Modifications (Prod)
+1. Mount rootfs
+2. Copy bundle-fetch.sh to /opt/swarm/
+3. Create snapshot with script included
+4. Test spawn flow
+
+---
+
+## Architecture Summary
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         SPAWN FLOW                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  POST /api/spawn {workflow_id}                                  │
+│           │                                                     │
+│           ▼                                                     │
+│  ┌─────────────────┐                                           │
+│  │  Spawn Service  │                                           │
+│  └────────┬────────┘                                           │
+│           │                                                     │
+│  1. swarm-spawn-ns <vmId>  ─────► VM boots in namespace        │
+│           │                                                     │
+│  2. GET /api/internal/spawn/:workflowId                        │
+│           │                                                     │
+│           ▼                                                     │
+│  ┌─────────────────┐   Returns:                                │
+│  │  Bundle Service │   - bundle_url (presigned MinIO)          │
+│  └────────┬────────┘   - bundle_hash                           │
+│           │            - entrypoint                             │
+│           │            - runtime                                │
+│           ▼                                                     │
+│  3. SSH into VM: bundle-fetch.sh <url> <hash> <entry> <runtime>│
+│           │                                                     │
+│           ▼                                                     │
+│  ┌─────────────────┐                                           │
+│  │  VM executes:   │                                           │
+│  │  - Download     │                                           │
+│  │  - Verify hash  │                                           │
+│  │  - Unpack       │                                           │
+│  │  - npm install  │                                           │
+│  │  - Run entry    │                                           │
+│  └─────────────────┘                                           │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Infrastructure Reference
 
-**Dev droplet**: 134.199.235.140
-**Node path**: `/root/.nvm/versions/node/v22.21.1/bin`
+**Dev droplet**: 134.199.235.140 (API only, no Firecracker)
+**Prod droplet**: 146.190.35.235 (Full Firecracker setup)
+**Node path dev**: /root/.nvm/versions/node/v22.21.1/bin
+**Node path prod**: /root/.nvm/versions/node/v22.12.0/bin
 
-**MinIO**:
-- API: http://localhost:9000
-- Bucket: swarm-bundles
-- User: swarm_admin
-- Pass: SwarmMinIO2025_Dev!
-
-**PostgreSQL**:
-- DB: swarmdb
-- User: swarm
-- Pass: swarm_dev_2024
+**Test workflow**:
+- ID: c2dea386-b80b-4791-a105-ab4ec8374aed
+- Bundle hash: 8730650e6c4fb1b983cd44c388eae2ce745079334ef673b0b46b07a423389392
 
 ---
 
-## Test Commands
-
-```bash
-# SSH to dev
-ssh -i ~/.ssh/swarm_key root@134.199.235.140
-export PATH=/root/.nvm/versions/node/v22.21.1/bin:$PATH
-
-# Get auth token (use existing test user)
-TOKEN=$(curl -s -X POST http://localhost:3002/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"admin@swarmstack.net","password":"AdminTest123!"}' | jq -r .token)
-
-# Test list workflows
-curl -s http://localhost:3002/api/bundles/workflows \
-  -H "Authorization: Bearer $TOKEN" | jq
-
-# Create test workflow first
-curl -s -X POST http://localhost:3002/api/bundles/workflows \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Test Workflow","slug":"test-workflow","description":"Testing bundle pipeline"}' | jq
-```
-
----
-*Updated: 2026-01-02 ~09:22 UTC*
+*Updated: 2026-01-02 ~19:05 UTC*

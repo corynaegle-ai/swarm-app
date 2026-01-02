@@ -46,7 +46,7 @@ const upload = multer({
  * - version: semver string
  * - metadata: optional JSON
  */
-router.post('/bundles', requireAuth, upload.single('bundle'), async (req, res) => {
+router.post('/', requireAuth, upload.single('bundle'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No bundle file provided' });
@@ -79,7 +79,7 @@ router.post('/bundles', requireAuth, upload.single('bundle'), async (req, res) =
  * GET /bundles/:hash
  * Get bundle metadata by hash
  */
-router.get('/bundles/:hash', requireAuth, async (req, res) => {
+router.get('/:hash', requireAuth, async (req, res) => {
   try {
     const bundle = await bundleService.getBundleByHash(req.params.hash);
     
@@ -98,7 +98,7 @@ router.get('/bundles/:hash', requireAuth, async (req, res) => {
  * GET /bundles/:hash/presigned
  * Get presigned download URL for VM fetch
  */
-router.get('/bundles/:hash/presigned', requireAuth, async (req, res) => {
+router.get('/:hash/presigned', requireAuth, async (req, res) => {
   try {
     const url = await bundleService.getPresignedUrl(req.params.hash);
     res.json({ url, expiresIn: 3600 });

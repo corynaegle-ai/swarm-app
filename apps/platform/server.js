@@ -122,8 +122,8 @@ app.use("/uploads", requireAuth, async (req, res, next) => {
   next();
 }, express.static("/opt/swarm-app/uploads"));
 
-app.use("/api/internal", internalRoutes);
-app.use("/api/internal", bundleInternalRoutes);
+app.use("/api/internal", bundleInternalRoutes); // bundles first (no auth)
+app.use("/api/internal", internalRoutes); // then internal (with auth)
 // Legacy ticket routes (agent endpoints)
 const legacyTicketRoutes = require('./routes/tickets-legacy');
 app.use('/', legacyTicketRoutes);

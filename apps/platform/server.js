@@ -81,6 +81,7 @@ const mcpRoutes = require('./routes/mcp');
 const internalRoutes = require('./routes/internal');
 const registryRoutes = require('./routes/agents-registry');
 const backlogRoutes = require('./routes/backlog');
+const { router: bundleRoutes, internalRouter: bundleInternalRoutes } = require('./routes/bundles');
 
 // Dev API rate limiter - more generous for development work
 const devLimiter = rateLimit({
@@ -109,6 +110,7 @@ app.use('/api/learning', apiLimiter, learningRoutes);
 app.use('/api/mcp', apiLimiter, mcpRoutes);
 app.use("/api/backlog", backlogRoutes);
 app.use('/api/registry', apiLimiter, registryRoutes);
+app.use('/api/bundles', apiLimiter, bundleRoutes);
 // Serve uploaded files with tenant isolation
 const { requireAuth } = require("./middleware/auth");
 app.use("/uploads", requireAuth, async (req, res, next) => {
@@ -121,6 +123,7 @@ app.use("/uploads", requireAuth, async (req, res, next) => {
 }, express.static("/opt/swarm-app/uploads"));
 
 app.use("/api/internal", internalRoutes);
+app.use("/api/internal", bundleInternalRoutes);
 // Legacy ticket routes (agent endpoints)
 const legacyTicketRoutes = require('./routes/tickets-legacy');
 app.use('/', legacyTicketRoutes);

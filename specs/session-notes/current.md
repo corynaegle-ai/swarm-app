@@ -173,3 +173,56 @@ Fixed reflector require paths on droplet:
 ---
 
 *Updated: 2026-01-03 ~05:20 UTC*
+
+## Session: 2026-01-03 ~06:00 UTC - Agentic Memory Integration (Part 1)
+
+### ✅ COMPLETED
+
+**Deployed agentic memory services to dev droplet (134.199.235.140)**
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| context-builder.js | ✅ Deployed | `/opt/swarm-app/apps/platform/services/` |
+| playbook-service.js | ✅ Deployed | `/opt/swarm-app/apps/platform/services/` |
+| signal-capture.js | ✅ Deployed | `/opt/swarm-app/apps/platform/services/` |
+| playbook routes | ✅ Deployed | `/opt/swarm-app/apps/platform/routes/playbook.js` |
+| reflector/index.js | ✅ Deployed (fixed paths) | `/opt/swarm-app/apps/platform/reflector/` |
+
+**Key Findings:**
+- Claim endpoint is in `tickets-legacy.js` line 66 (not tickets.js)
+- Database schema verified: 44 playbook entries seeded
+- Reflector had require path issues - fixed `../platform/db` → `../db`
+
+### 🔲 TODO (Next Session)
+
+1. **Wire playbook routes into server.js** - Add `app.use('/api/playbook', require('./routes/playbook'))`
+2. **Wire context-builder into claim endpoint** - Modify `tickets-legacy.js` line 66 to inject playbook
+3. **Wire signal-capture into Sentinel** - Add to review handler for automatic feedback
+4. **Create claude-client.js** - Real Claude API integration for Reflector (currently using mock)
+5. **Restart services** - `pm2 restart swarm-platform-dev swarm-reflector`
+6. **Test E2E** - claim → execute → signal → reflect → playbook update
+7. **Fix design_sessions FK** - UUID type mismatch with workflow_id
+
+### Files Modified
+
+```
+/opt/swarm-app/apps/platform/
+├── services/
+│   ├── context-builder.js (NEW)
+│   ├── playbook-service.js (NEW)
+│   └── signal-capture.js (NEW)
+├── routes/
+│   └── playbook.js (NEW)
+└── reflector/
+    └── index.js (UPDATED - fixed require paths)
+```
+
+### Key Code Locations
+
+- **Claim endpoint**: `routes/tickets-legacy.js:66` - `router.post('/claim', ...)`
+- **Sentinel review**: Need to find in agents/ directory
+- **Server routes**: `server.js` - add playbook route mounting
+
+---
+
+*Updated: 2026-01-03 ~06:00 UTC*

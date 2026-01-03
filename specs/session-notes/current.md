@@ -99,3 +99,77 @@ Implemented complete agentic memory architecture from scratch based on research 
 ---
 
 *Updated: 2026-01-02 ~20:45 UTC*
+
+---
+
+## Session: 2026-01-03 ~05:20 UTC - Agentic Memory Deployment
+
+### ✅ COMPLETED
+
+**Deployed agentic memory system to dev droplet (134.199.235.140)**
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| Schema migration | ✅ | `migrations/020_agentic_memory_schema.sql` |
+| Seed data | ✅ | `migrations/021_seed_playbook.sql` |
+| Playbook service | ✅ | `services/playbook-service.js` |
+| Signal capture | ✅ | `services/signal-capture.js` |
+| Context builder | ✅ | `services/context-builder.js` |
+| Playbook routes | ✅ | `routes/playbook.js` (already wired in server.js) |
+| Reflector service | ✅ | `reflector/index.js` (PM2: swarm-reflector) |
+
+### Verification Results
+
+```
+Playbook API: http://localhost:3002/api/playbook?scope=global
+  → Returns 1005 tokens of formatted wisdom
+  → 44 playbook entries seeded
+
+Reflector: http://localhost:3010/health
+  → {"status":"ok","service":"reflector"}
+  → Polling every 30s for unprocessed signals
+  → Using mock Claude client (no claude-client.js yet)
+
+PM2 Status:
+  → swarm-platform-dev: online (port 3002)
+  → swarm-reflector: online (port 3010)
+```
+
+### Schema Fix Applied
+
+Fixed reflector require paths on droplet:
+- `require('../platform/db')` → `require('../db')`
+- `require('../platform/services/claude-client')` → `require('../services/claude-client')`
+
+### Database Tables Created
+
+- `playbook_entries` - 44 entries seeded
+- `execution_signals` - Ready for signal capture
+- `playbook_reflections` - Audit trail
+- `design_sessions` - Strategic context (partial - FK issue)
+- `ticket_completion_summaries` - Upstream context
+- `context_metrics` - Token tracking
+
+### Views & Functions
+
+- `v_playbook_health` - Entry health metrics
+- `v_signal_backlog` - Unprocessed signals queue
+- `v_learning_velocity` - Lessons per day
+- `get_relevant_playbook()` - Query function
+- `update_playbook_counters()` - Feedback loop
+- `archive_stale_playbook_entries()` - Cleanup
+
+---
+
+## Next Steps (TODO)
+
+1. **Wire context-builder into claim endpoint** - Modify `/api/tickets/:id/claim` to inject playbook
+2. **Wire signal-capture into Sentinel** - Add to review handler for automatic feedback
+3. **Create claude-client.js** - Real Claude API integration for Reflector
+4. **Fix design_sessions FK constraint** - UUID type mismatch with workflow_id
+5. **Test E2E loop** - claim → execute → signal → reflect → playbook update
+6. **Dashboard UI** - Playbook viewer component
+
+---
+
+*Updated: 2026-01-03 ~05:20 UTC*

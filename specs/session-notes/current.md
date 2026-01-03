@@ -1,146 +1,81 @@
-# Session Notes - 2026-01-02 (Bundle Pipeline Complete)
-
-## Summary: Tasks 4-5 Implementation
-
-### Completed This Session
-
-| Task | Status | Details |
-|------|--------|---------|
-| Task 1: MinIO | ✅ DONE | Previous session |
-| Task 2: PostgreSQL | ✅ DONE | Previous session |
-| Task 3: Bundle API | ✅ DONE | Previous session |
-| Task 4: Boot Script | ✅ DONE | bundle-fetch.sh created |
-| Task 5: Orchestrator | ✅ DONE | spawn service + routes created |
-
-### Files Created/Modified
-
-**bundle-fetch.sh** (scripts/bundle-fetch.sh):
-- Shell script to run inside VMs
-- Fetches bundle from MinIO URL
-- Verifies SHA256 hash
-- Caches bundles in /var/cache/swarm/bundles/
-- Unpacks to /opt/workflow
-- Runs entrypoint with specified runtime
-
-**spawn-service.js** (services/spawn-service.js):
-- `getSpawnConfig(workflowId)` - Calls internal spawn API
-- `execOnVM(vmId, command)` - SSH into VM with namespace
-- `spawnWithBundle(vmId, workflowId)` - Full spawn flow
-- `releaseVM(vmId)` - Cleanup VM after workflow
-
-**spawn.js** (routes/spawn.js):
-- `POST /api/spawn` - Spawn VM with workflow bundle
-- `GET /api/spawn` - List active spawns
-- `GET /api/spawn/:vmId/status` - Check spawn status
-- `DELETE /api/spawn/:vmId` - Release VM
-
-**server.js** (updated):
-- Added spawn routes import (line 85)
-- Mounted /api/spawn (line 116)
+# Session: Agentic Memory System Implementation
+**Date:** 2026-01-02
+**Focus:** Full implementation of Dr. Vasquez-Nakamura agentic memory design
 
 ---
 
-## Verified Working
+## Context
 
-```bash
-# List active spawns
-curl -s http://localhost:3002/api/spawn -H "Authorization: Bearer $TOKEN"
-# Returns: {"spawns": []}
+Implementing complete agentic memory architecture based on research synthesis document at `/Users/cory.naegle/Documents/Obsidian Vault/business-ideas/cfa/agentic-memory-design.md`. Building from scratch - ignoring existing partial learning system.
 
-# Get spawn config for workflow
-curl -s http://localhost:3002/api/internal/spawn/c2dea386-b80b-4791-a105-ab4ec8374aed
-# Returns: {bundle_url, bundle_hash, runtime, entrypoint, etc.}
+## Core Architecture
+
+1. **Playbook Foundation** - Accumulated agent wisdom with helpful/harmful counters
+2. **Execution Feedback Loop** - Signals captured, Reflector extracts lessons, Curator merges
+3. **Context Inheritance** - Design Agent strategic reasoning flows to workers
+4. **Attention Monitoring** - Token tracking with compaction triggers
+
+## Files Created (Local)
+
+All files staged at `/Users/cory.naegle/swarm-memory-impl/`:
+
 ```
+/Users/cory.naegle/swarm-memory-impl/
+├── 020_agentic_memory_schema.sql    # Full database schema (322 lines)
+├── 021_seed_playbook.sql            # Initial playbook patterns (55 lines)
+├── playbook-service.js              # Playbook CRUD + formatting (286 lines)
+├── signal-capture.js                # Capture execution signals (266 lines)
+├── context-builder.js               # Hierarchical context assembly (418 lines)
+├── reflector/
+│   └── index.js                     # Reflector service with Curator (321 lines)
+└── routes/
+    └── playbook.js                  # REST API for playbook (95 lines)
+```
+
+## Schema Summary
+
+### Tables Created
+- `playbook_entries` - Core playbook with entry_type, helpful/harmful counters, scope, tags
+- `execution_signals` - Captures Sentinel reviews, CI results, PR outcomes
+- `playbook_reflections` - Audit trail of Claude reflections
+- `design_sessions` - Design Agent strategic reasoning
+- `ticket_design_context` - Links tickets to design context
+- `ticket_completion_summaries` - What upstream tickets produced
+- `context_metrics` - Token usage per turn
+
+### Views
+- `v_playbook_health` - Entry counts by type/scope
+- `v_signal_backlog` - Unprocessed signals
+- `v_learning_velocity` - Lessons extracted per day
+
+### Functions
+- `get_relevant_playbook(scope, tags, limit)` - Query relevant entries
+- `update_playbook_counters(entry_id, helpful)` - Increment counters
+- `archive_stale_playbook_entries()` - Maintenance cleanup
+
+## Still TODO
+
+1. **Deploy to dev droplet** - rsync files, run migration
+2. **Integrate claim endpoint** - Modify tickets.js to inject playbook
+3. **Wire signal capture** - Add to Sentinel review, PR merge points
+4. **Start Reflector service** - PM2 managed process
+5. **Update forge-agent prompt** - Reference playbook section
+6. **Test E2E** - Ticket claim -> execution -> signal -> reflection -> playbook update
+7. **Dashboard UI** - Playbook viewer, learning velocity charts
+
+## Key Design Decisions
+
+- **Delta updates, not rewrites** - Entries accumulate with counters
+- **Mistakes first** - Playbook orders mistakes before strategies (prevent rework)
+- **Scope hierarchy** - global -> repo:name -> domain:area
+- **0.4 confidence threshold** - Reflector skips low-confidence lessons
+- **Async reflection** - Reflector polls signals, does not block execution
+
+## Reference Documents
+
+- Research synthesis: /Users/cory.naegle/Documents/Obsidian Vault/business-ideas/cfa/agentic-memory-design.md
+- Implementation files: /Users/cory.naegle/swarm-memory-impl/
 
 ---
 
-## Next Steps (Prod Testing)
-
-The API layer is complete on dev. End-to-end testing requires prod droplet (146.190.35.235) with Firecracker:
-
-### Step 1: Deploy to Prod
-```bash
-# Copy files to prod
-rsync -avz -e "ssh -i ~/.ssh/swarm_key" \
-  /opt/swarm-app/apps/platform/services/spawn-service.js \
-  /opt/swarm-app/apps/platform/routes/spawn.js \
-  /opt/swarm-app/apps/platform/scripts/bundle-fetch.sh \
-  root@146.190.35.235:/opt/swarm-app/apps/platform/
-
-# Install bundle-fetch.sh into VM rootfs snapshot
-# ... (requires updating snapshots)
-```
-
-### Step 2: Test End-to-End on Prod
-```bash
-# Spawn VM with bundle
-curl -X POST http://localhost:3002/api/spawn \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"workflow_id": "c2dea386-b80b-4791-a105-ab4ec8374aed"}'
-```
-
-### Step 3: VM Rootfs Modifications (Prod)
-1. Mount rootfs
-2. Copy bundle-fetch.sh to /opt/swarm/
-3. Create snapshot with script included
-4. Test spawn flow
-
----
-
-## Architecture Summary
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         SPAWN FLOW                              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  POST /api/spawn {workflow_id}                                  │
-│           │                                                     │
-│           ▼                                                     │
-│  ┌─────────────────┐                                           │
-│  │  Spawn Service  │                                           │
-│  └────────┬────────┘                                           │
-│           │                                                     │
-│  1. swarm-spawn-ns <vmId>  ─────► VM boots in namespace        │
-│           │                                                     │
-│  2. GET /api/internal/spawn/:workflowId                        │
-│           │                                                     │
-│           ▼                                                     │
-│  ┌─────────────────┐   Returns:                                │
-│  │  Bundle Service │   - bundle_url (presigned MinIO)          │
-│  └────────┬────────┘   - bundle_hash                           │
-│           │            - entrypoint                             │
-│           │            - runtime                                │
-│           ▼                                                     │
-│  3. SSH into VM: bundle-fetch.sh <url> <hash> <entry> <runtime>│
-│           │                                                     │
-│           ▼                                                     │
-│  ┌─────────────────┐                                           │
-│  │  VM executes:   │                                           │
-│  │  - Download     │                                           │
-│  │  - Verify hash  │                                           │
-│  │  - Unpack       │                                           │
-│  │  - npm install  │                                           │
-│  │  - Run entry    │                                           │
-│  └─────────────────┘                                           │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Infrastructure Reference
-
-**Dev droplet**: 134.199.235.140 (API only, no Firecracker)
-**Prod droplet**: 146.190.35.235 (Full Firecracker setup)
-**Node path dev**: /root/.nvm/versions/node/v22.21.1/bin
-**Node path prod**: /root/.nvm/versions/node/v22.12.0/bin
-
-**Test workflow**:
-- ID: c2dea386-b80b-4791-a105-ab4ec8374aed
-- Bundle hash: 8730650e6c4fb1b983cd44c388eae2ce745079334ef673b0b46b07a423389392
-
----
-
-*Updated: 2026-01-02 ~19:05 UTC*
+*Updated: 2026-01-02 ~20:30 UTC*
